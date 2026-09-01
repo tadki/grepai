@@ -7,12 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.1] - 2026-09-01
+
 ### Fixed
 
+- **Files Dropped From the Index on Atomic Writes**: An atomic write — write to a temp file, then rename it over the target — surfaces as `RENAME`/`REMOVE` on a path whose file is still on disk, and the watcher removed it from both the vector and symbol indexes, silently, until the next manual save or watcher restart (#295, closes #225 and #129) - @yoanbernabeu
+  - Editors and coding agents (Claude Code, Cursor) save this way, so the files being dropped were exactly the ones being actively worked on
+  - The same cause emptied the index wholesale on `git checkout` across a diverged branch, since git writes files by renaming over them — reproduced as `Files indexed: 0` on a 20-file repository
+  - The event is now re-qualified as a modification when the path still resolves to a regular file; genuine deletions are unaffected
+  - Credit to @Third-Thing, who identified this class of false removals independently in July
 - **Stale Symbols After Upgrade**: Pair each persisted symbol entry with the extractor version that produced it, so a release shipping improved symbol extraction re-processes unchanged files instead of leaving stale symbols in place until `.grepai/symbols.gob` is deleted by hand (#264) - @kryptt
   - The first `grepai watch` after upgrading re-extracts symbols for every traced file once, then returns to normal incremental behaviour
   - Symbol extraction only: the vector index is untouched and **no re-embedding occurs**, so there is no API cost and no reindexing to plan
   - Existing `symbols.gob` files load unchanged, and remain readable if you downgrade
+
+### Changed
+
+- **Go Toolchain From `go.mod`**: The release and docs workflows now resolve the Go version from `go.mod` (`go-version-file`) instead of a hardcoded pin, so the toolchain can no longer drift from what the module actually requires (#293) - @yoanbernabeu
+- Building from source now requires Go 1.25.5 or later, up from 1.25.0 (#288). Installing a released binary is unaffected
+
+### Dependencies
+
+- Bump `github.com/mark3labs/mcp-go` from 0.45.0 to 0.58.0 (#288)
+- Bump `google.golang.org/grpc` from 1.82.1 to 1.83.2 (#289)
+- Bump `actions/setup-go` from 5 to 7 (#292), `actions/setup-node` from 6 to 7 (#290)
 
 ## [0.36.0] - 2026-08-30
 
@@ -685,7 +703,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial public release
 
-[Unreleased]: https://github.com/yoanbernabeu/grepai/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/yoanbernabeu/grepai/compare/v0.36.1...HEAD
+[0.36.1]: https://github.com/yoanbernabeu/grepai/compare/v0.36.0...v0.36.1
 [0.36.0]: https://github.com/yoanbernabeu/grepai/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/yoanbernabeu/grepai/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/yoanbernabeu/grepai/compare/v0.33.0...v0.34.0
