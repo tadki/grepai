@@ -815,11 +815,17 @@ func runInitialScan(ctx context.Context, idx *indexer.Indexer, scanner *indexer.
 			continue
 		}
 
-		// Skip files that are unchanged since the last index run and already tracked.
+		// Skip files that are unchanged since the last index run, already
+		// tracked, and extracted by the current extractor version. The
+		// mtime fast-path must also check the extractor signature —
+		// otherwise an upgrade that ships better extraction never
+		// re-processes files whose source didn't change.
 		if !lastIndexTime.IsZero() {
 			fileModTime := time.Unix(file.ModTime, 0)
 			if (fileModTime.Before(lastIndexTime) || fileModTime.Equal(lastIndexTime)) && symbolStore.IsFileIndexed(file.Path) {
-				continue
+				if v, ok := symbolStore.GetFileExtractorVersion(file.Path); ok && v == extractor.Version() {
+					continue
+				}
 			}
 		}
 
@@ -832,8 +838,14 @@ func runInitialScan(ctx context.Context, idx *indexer.Indexer, scanner *indexer.
 			continue
 		}
 
-		// Skip extraction when content hash matches what we already persisted.
-		if existingHash, ok := symbolStore.GetFileContentHash(fileInfo.Path); ok && existingHash == fileInfo.Hash {
+		// Skip extraction when BOTH the content hash AND the extractor
+		// version match what was persisted last time. Content alone isn't
+		// enough — a release that ships better extraction (new tree-sitter
+		// grammar, expanded regex patterns, bug-fixed query) needs to
+		// re-process unchanged files to surface the improved symbols.
+		existingHash, hashOK := symbolStore.GetFileContentHash(fileInfo.Path)
+		existingVersion, versionOK := symbolStore.GetFileExtractorVersion(fileInfo.Path)
+		if hashOK && versionOK && existingHash == fileInfo.Hash && existingVersion == extractor.Version() {
 			continue
 		}
 
@@ -842,7 +854,7 @@ func runInitialScan(ctx context.Context, idx *indexer.Indexer, scanner *indexer.
 			log.Printf("Warning: failed to extract symbols from %s: %v", fileInfo.Path, err)
 			continue
 		}
-		if err := symbolStore.SaveFileWithContentHash(ctx, fileInfo.Path, fileInfo.Hash, symbols, refs); err != nil {
+		if err := symbolStore.SaveFileWithSignature(ctx, fileInfo.Path, fileInfo.Hash, extractor.Version(), symbols, refs); err != nil {
 			log.Printf("Warning: failed to save symbols for %s: %v", fileInfo.Path, err)
 		}
 		symbolCount += len(symbols)
@@ -2150,7 +2162,7 @@ func handleFileEvent(ctx context.Context, idx *indexer.Indexer, scanner *indexer
 			symbols, refs, err := extractSymbolsWithFramework(ctx, extractor, fileInfo.Path, fileInfo.Content, processors...)
 			if err != nil {
 				log.Printf("Failed to extract symbols from %s: %v", event.Path, err)
-			} else if err := symbolStore.SaveFileWithContentHash(ctx, fileInfo.Path, fileInfo.Hash, symbols, refs); err != nil {
+			} else if err := symbolStore.SaveFileWithSignature(ctx, fileInfo.Path, fileInfo.Hash, extractor.Version(), symbols, refs); err != nil {
 				log.Printf("Failed to save symbols for %s: %v", event.Path, err)
 			} else {
 				log.Printf("Extracted %d symbols from %s", len(symbols), event.Path)

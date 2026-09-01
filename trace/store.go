@@ -14,18 +14,28 @@ import (
 
 // GOBSymbolStore implements SymbolStore using GOB encoding.
 type GOBSymbolStore struct {
-	indexPath         string
-	lockPath          string
-	index             *SymbolIndex
-	fileIndex         map[string]bool
-	fileContentHashes map[string]string
-	mu                sync.RWMutex
+	indexPath             string
+	lockPath              string
+	index                 *SymbolIndex
+	fileIndex             map[string]bool
+	fileContentHashes     map[string]string
+	fileExtractorVersions map[string]string
+	mu                    sync.RWMutex
 }
 
 type gobSymbolData struct {
 	Index             SymbolIndex
 	FileIndex         map[string]bool
 	FileContentHashes map[string]string
+	// FileExtractorVersions records the extractor.Version() value used
+	// when each file's symbols were extracted. Pairing this with the
+	// content hash lets dedup invalidate cached extractions when a new
+	// release ships better symbol coverage even though the source files
+	// themselves haven't changed. Older gob files without this field
+	// decode with a nil map; the dedup check then treats every file as
+	// "extractor version unknown" and re-extracts once, which is the
+	// correct behavior for a one-time upgrade.
+	FileExtractorVersions map[string]string
 }
 
 // NewGOBSymbolStore creates a new GOB-based symbol store.
@@ -39,8 +49,9 @@ func NewGOBSymbolStore(indexPath string) *GOBSymbolStore {
 			CallGraph:  []CallEdge{},
 			Version:    1,
 		},
-		fileIndex:         make(map[string]bool),
-		fileContentHashes: make(map[string]string),
+		fileIndex:             make(map[string]bool),
+		fileContentHashes:     make(map[string]string),
+		fileExtractorVersions: make(map[string]string),
 	}
 }
 
@@ -82,6 +93,7 @@ func (s *GOBSymbolStore) loadUnlocked() error {
 	s.index = &data.Index
 	s.fileIndex = data.FileIndex
 	s.fileContentHashes = data.FileContentHashes
+	s.fileExtractorVersions = data.FileExtractorVersions
 
 	if s.index.Symbols == nil {
 		s.index.Symbols = make(map[string][]Symbol)
@@ -97,6 +109,9 @@ func (s *GOBSymbolStore) loadUnlocked() error {
 	}
 	if s.fileContentHashes == nil {
 		s.fileContentHashes = make(map[string]string)
+	}
+	if s.fileExtractorVersions == nil {
+		s.fileExtractorVersions = make(map[string]string)
 	}
 
 	return nil
@@ -129,9 +144,10 @@ func (s *GOBSymbolStore) Persist(ctx context.Context) error {
 func (s *GOBSymbolStore) persistUnlocked() error {
 	s.index.UpdatedAt = time.Now()
 	data := gobSymbolData{
-		Index:             *s.index,
-		FileIndex:         s.fileIndex,
-		FileContentHashes: s.fileContentHashes,
+		Index:                 *s.index,
+		FileIndex:             s.fileIndex,
+		FileContentHashes:     s.fileContentHashes,
+		FileExtractorVersions: s.fileExtractorVersions,
 	}
 
 	tmpFile, err := os.CreateTemp(filepath.Dir(s.indexPath), filepath.Base(s.indexPath)+".tmp-*")
@@ -172,7 +188,9 @@ func (s *GOBSymbolStore) SaveFile(ctx context.Context, filePath string, symbols 
 }
 
 // SaveFileWithContentHash persists symbols/references for a file and tracks
-// the current file content hash for future cache checks.
+// the current file content hash for future cache checks. The extractor
+// version stays whatever was already stored (or empty) — call
+// SaveFileWithSignature to update both fingerprints at once.
 func (s *GOBSymbolStore) SaveFileWithContentHash(ctx context.Context, filePath string, contentHash string, symbols []Symbol, refs []Reference) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -208,6 +226,24 @@ func (s *GOBSymbolStore) SaveFileWithContentHash(ctx context.Context, filePath s
 		s.fileContentHashes[filePath] = contentHash
 	} else {
 		delete(s.fileContentHashes, filePath)
+	}
+	return nil
+}
+
+// SaveFileWithSignature persists symbols/references for a file and
+// records BOTH the content hash and the extractor version that produced
+// them. Dedup callers can then ask GetFileExtractorVersion alongside
+// GetFileContentHash and re-extract whenever either has drifted.
+func (s *GOBSymbolStore) SaveFileWithSignature(ctx context.Context, filePath string, contentHash, extractorVersion string, symbols []Symbol, refs []Reference) error {
+	if err := s.SaveFileWithContentHash(ctx, filePath, contentHash, symbols, refs); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if extractorVersion != "" {
+		s.fileExtractorVersions[filePath] = extractorVersion
+	} else {
+		delete(s.fileExtractorVersions, filePath)
 	}
 	return nil
 }
@@ -553,4 +589,16 @@ func (s *GOBSymbolStore) GetFileContentHash(filePath string) (string, bool) {
 	defer s.mu.RUnlock()
 	hash, ok := s.fileContentHashes[filePath]
 	return hash, ok
+}
+
+// GetFileExtractorVersion returns the SymbolExtractor.Version() that was
+// recorded when this file's symbols were last persisted, if known.
+// Symbol stores produced by older grepai releases lack this metadata; in
+// that case the second return is false and callers should treat the
+// cache as stale.
+func (s *GOBSymbolStore) GetFileExtractorVersion(filePath string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	version, ok := s.fileExtractorVersions[filePath]
+	return version, ok
 }

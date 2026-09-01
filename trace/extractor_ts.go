@@ -57,6 +57,18 @@ func (e *TreeSitterExtractor) Mode() string {
 	return "precise"
 }
 
+// treeSitterExtractorVersion is bumped manually whenever the tree-sitter
+// walk logic, grammar imports, or symbol-emission code in this file change
+// in a way that affects extraction output. Bumping invalidates cached
+// symbol entries on the next scan.
+const treeSitterExtractorVersion = "treesitter-v1"
+
+// Version returns the extractor's signature used for dedup
+// invalidation. See SymbolExtractor.Version.
+func (e *TreeSitterExtractor) Version() string {
+	return treeSitterExtractorVersion
+}
+
 // SupportedLanguages returns list of supported file extensions.
 func (e *TreeSitterExtractor) SupportedLanguages() []string {
 	langs := make([]string, 0, len(e.parsers))

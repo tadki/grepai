@@ -26,6 +26,19 @@ func (e *RegexExtractor) Mode() string {
 	return "fast"
 }
 
+// regexExtractorVersion is bumped manually whenever the regex pattern
+// set in patterns.go is meaningfully revised. Bumping this string
+// invalidates every persisted RegexExtractor symbol cache entry on the
+// next scan, forcing fresh extraction. Use semver-ish strings ("regex-v2",
+// "regex-v2-lua-funcs") so the bump intent is visible in diffs.
+const regexExtractorVersion = "regex-v1"
+
+// Version returns the extractor's signature used for dedup
+// invalidation. See SymbolExtractor.Version.
+func (e *RegexExtractor) Version() string {
+	return regexExtractorVersion
+}
+
 // SupportedLanguages returns list of supported file extensions.
 func (e *RegexExtractor) SupportedLanguages() []string {
 	langs := make([]string, 0, len(e.patterns))

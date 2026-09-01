@@ -24,6 +24,7 @@ func (m *mockSymbolExtractor) ExtractAll(ctx context.Context, filePath string, c
 }
 func (m *mockSymbolExtractor) SupportedLanguages() []string { return []string{".ts"} }
 func (m *mockSymbolExtractor) Mode() string                 { return "fast" }
+func (m *mockSymbolExtractor) Version() string              { return "mock-v1" }
 
 type mockFrameworkProcessor struct{}
 

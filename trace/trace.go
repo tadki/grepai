@@ -134,6 +134,16 @@ type SymbolExtractor interface {
 
 	// Mode returns "fast" or "precise".
 	Mode() string
+
+	// Version returns an opaque token that changes whenever this
+	// extractor's output for the same input would change — for example
+	// after a grammar bump, a new query, or a release that adds new
+	// language coverage. Callers persist this alongside the file's
+	// content hash so the dedup cache invalidates on extractor
+	// upgrades; without that, a binary that ships better symbol
+	// extraction never re-runs against files whose content didn't
+	// change between releases.
+	Version() string
 }
 
 // SymbolStore persists and queries the symbol index.
