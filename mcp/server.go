@@ -805,6 +805,12 @@ func pathPrefixMatchesProjectRoots(pathPrefix string, projectRoots []string) boo
 		return true
 	}
 
+	// A host that only queries a shared remote index may not have the project
+	// files on its local filesystem. Unreadable roots cannot verify (or
+	// disprove) the prefix, so they must not cause a rejection — the
+	// store-side path filter decides relevance. Reject only when every root
+	// was locally checked and none matched.
+	unverifiable := false
 	for _, root := range projectRoots {
 		if root == "" {
 			continue
@@ -815,6 +821,7 @@ func pathPrefixMatchesProjectRoots(pathPrefix string, projectRoots []string) boo
 		}
 		entries, err := os.ReadDir(root)
 		if err != nil {
+			unverifiable = true
 			continue
 		}
 		for _, entry := range entries {
@@ -823,7 +830,7 @@ func pathPrefixMatchesProjectRoots(pathPrefix string, projectRoots []string) boo
 			}
 		}
 	}
-	return false
+	return unverifiable
 }
 
 func selectWorkspaceProjects(ws *config.Workspace, selectedProjects []string) []config.ProjectEntry {
