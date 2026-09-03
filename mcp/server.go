@@ -607,6 +607,13 @@ func (s *Server) handleWorkspaceSearch(ctx context.Context, query string, limit 
 
 	projectNames := parseProjectNames(projectsStr)
 	normalizedPath, resolvedProjects, err := search.NormalizeWorkspacePathPrefix(pathPrefix, ws, projectNames)
+	// A workspace with a single project can always scope the search to it.
+	// This lets the path filter push down into the database query instead of
+	// running as a post-filter after the limit has already truncated results
+	// from the other (nonexistent) projects.
+	if err == nil && len(resolvedProjects) == 0 && len(ws.Projects) == 1 {
+		resolvedProjects = []string{ws.Projects[0].Name}
+	}
 	if err != nil {
 		selected := projectNames
 		if len(selected) == 0 {
