@@ -31,7 +31,7 @@ func (e *RegexExtractor) Mode() string {
 // invalidates every persisted RegexExtractor symbol cache entry on the
 // next scan, forcing fresh extraction. Use semver-ish strings ("regex-v2",
 // "regex-v2-lua-funcs") so the bump intent is visible in diffs.
-const regexExtractorVersion = "regex-v2-gdscript"
+const regexExtractorVersion = "regex-v3-gdscript"
 
 // Version returns the extractor's signature used for dedup
 // invalidation. See SymbolExtractor.Version.
