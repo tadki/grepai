@@ -375,6 +375,12 @@ func (s *Server) registerTools() {
 		mcp.WithString("format",
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
+		mcp.WithString("workspace",
+			mcp.Description("Workspace name for cross-project RPG query (optional)"),
+		),
+		mcp.WithString("project",
+			mcp.Description("Project name within workspace (requires workspace)"),
+		),
 	)
 	s.mcpServer.AddTool(rpgSearchTool, s.handleRPGSearch)
 
@@ -387,6 +393,12 @@ func (s *Server) registerTools() {
 		),
 		mcp.WithString("format",
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
+		),
+		mcp.WithString("workspace",
+			mcp.Description("Workspace name for cross-project RPG query (optional)"),
+		),
+		mcp.WithString("project",
+			mcp.Description("Project name within workspace (requires workspace)"),
 		),
 	)
 	s.mcpServer.AddTool(rpgFetchTool, s.handleRPGFetch)
@@ -412,6 +424,12 @@ func (s *Server) registerTools() {
 		),
 		mcp.WithString("format",
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
+		),
+		mcp.WithString("workspace",
+			mcp.Description("Workspace name for cross-project RPG query (optional)"),
+		),
+		mcp.WithString("project",
+			mcp.Description("Project name within workspace (requires workspace)"),
 		),
 	)
 	s.mcpServer.AddTool(rpgExploreTool, s.handleRPGExplore)
@@ -2152,6 +2170,18 @@ func formatBytes(b int64) string {
 
 // tryLoadRPG attempts to load the RPG store. Returns nil values if RPG is disabled or unavailable.
 func (s *Server) tryLoadRPG(ctx context.Context) (rpg.RPGStore, *rpg.QueryEngine, error) {
+	return s.tryLoadRPGForScope(ctx, "", "")
+}
+
+// tryLoadRPGForScope attempts to load the RPG store for a query scope. With a
+// workspace, the project entries from the workspace config are consulted —
+// RPG is configured per project — and the first project with RPG enabled and
+// a non-empty index wins. Without a workspace, the server's own project root
+// is used (single-project mode).
+func (s *Server) tryLoadRPGForScope(ctx context.Context, workspaceName, projectName string) (rpg.RPGStore, *rpg.QueryEngine, error) {
+	if workspaceName != "" {
+		return s.tryLoadWorkspaceRPG(ctx, workspaceName, projectName)
+	}
 	if s.projectRoot == "" {
 		return nil, nil, nil
 	}
@@ -2178,6 +2208,56 @@ func (s *Server) tryLoadRPG(ctx context.Context) (rpg.RPGStore, *rpg.QueryEngine
 	return rpgStore, qe, nil
 }
 
+// tryLoadWorkspaceRPG loads the RPG store of the first workspace project that
+// has RPG enabled and a non-empty index. Mirrors LoadWorkspaceSymbolStores,
+// which serves the same role for trace/refs queries.
+func (s *Server) tryLoadWorkspaceRPG(ctx context.Context, workspaceName, projectName string) (rpg.RPGStore, *rpg.QueryEngine, error) {
+	wsCfg, err := config.LoadWorkspaceConfig()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load workspace config: %w", err)
+	}
+	if wsCfg == nil {
+		return nil, nil, nil
+	}
+	ws, err := wsCfg.GetWorkspace(workspaceName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	projects := ws.Projects
+	if projectName != "" {
+		found := false
+		for _, p := range ws.Projects {
+			if p.Name == projectName {
+				projects = []config.ProjectEntry{p}
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, nil, fmt.Errorf("project %q not found in workspace %q", projectName, workspaceName)
+		}
+	}
+
+	for _, p := range projects {
+		cfg, err := config.Load(p.Path)
+		if err != nil || !cfg.RPG.Enabled {
+			continue
+		}
+		rpgStore := rpg.NewGOBRPGStore(config.GetRPGIndexPath(p.Path))
+		if err := rpgStore.Load(ctx); err != nil {
+			continue
+		}
+		graph := rpgStore.GetGraph()
+		if graph.Stats().TotalNodes == 0 {
+			rpgStore.Close()
+			continue
+		}
+		return rpgStore, rpg.NewQueryEngine(graph), nil
+	}
+	return nil, nil, nil
+}
+
 // handleRPGSearch handles the grepai_rpg_search tool call.
 func (s *Server) handleRPGSearch(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, err := request.RequireString("query")
@@ -2189,6 +2269,8 @@ func (s *Server) handleRPGSearch(ctx context.Context, request mcp.CallToolReques
 	kindsStr := request.GetString("kinds", "")
 	limit := request.GetInt("limit", 10)
 	format := request.GetString("format", "json")
+	workspace := s.resolveWorkspace(request.GetString("workspace", ""))
+	project := request.GetString("project", "")
 
 	// Validate format
 	if format != "json" && format != "toon" {
@@ -2196,7 +2278,7 @@ func (s *Server) handleRPGSearch(ctx context.Context, request mcp.CallToolReques
 	}
 
 	// Load RPG
-	rpgSt, qe, loadErr := s.tryLoadRPG(ctx)
+	rpgSt, qe, loadErr := s.tryLoadRPGForScope(ctx, workspace, project)
 	if errors.Is(loadErr, rpg.ErrRPGIndexOutdated) {
 		return mcp.NewToolResultError("RPG index is outdated; run 'grepai watch' to rebuild"), nil
 	}
@@ -2264,6 +2346,8 @@ func (s *Server) handleRPGFetch(ctx context.Context, request mcp.CallToolRequest
 	}
 
 	format := request.GetString("format", "json")
+	workspace := s.resolveWorkspace(request.GetString("workspace", ""))
+	project := request.GetString("project", "")
 
 	// Validate format
 	if format != "json" && format != "toon" {
@@ -2271,7 +2355,7 @@ func (s *Server) handleRPGFetch(ctx context.Context, request mcp.CallToolRequest
 	}
 
 	// Load RPG
-	rpgSt, qe, loadErr := s.tryLoadRPG(ctx)
+	rpgSt, qe, loadErr := s.tryLoadRPGForScope(ctx, workspace, project)
 	if errors.Is(loadErr, rpg.ErrRPGIndexOutdated) {
 		return mcp.NewToolResultError("RPG index is outdated; run 'grepai watch' to rebuild"), nil
 	}
@@ -2314,6 +2398,8 @@ func (s *Server) handleRPGExplore(ctx context.Context, request mcp.CallToolReque
 	edgeTypesStr := request.GetString("edge_types", "")
 	limit := request.GetInt("limit", 100)
 	format := request.GetString("format", "json")
+	workspace := s.resolveWorkspace(request.GetString("workspace", ""))
+	project := request.GetString("project", "")
 
 	// Validate format
 	if format != "json" && format != "toon" {
@@ -2326,7 +2412,7 @@ func (s *Server) handleRPGExplore(ctx context.Context, request mcp.CallToolReque
 	}
 
 	// Load RPG
-	rpgSt, qe, loadErr := s.tryLoadRPG(ctx)
+	rpgSt, qe, loadErr := s.tryLoadRPGForScope(ctx, workspace, project)
 	if errors.Is(loadErr, rpg.ErrRPGIndexOutdated) {
 		return mcp.NewToolResultError("RPG index is outdated; run 'grepai watch' to rebuild"), nil
 	}
