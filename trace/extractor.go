@@ -31,7 +31,7 @@ func (e *RegexExtractor) Mode() string {
 // invalidates every persisted RegexExtractor symbol cache entry on the
 // next scan, forcing fresh extraction. Use semver-ish strings ("regex-v2",
 // "regex-v2-lua-funcs") so the bump intent is visible in diffs.
-const regexExtractorVersion = "regex-v3-gdscript"
+const regexExtractorVersion = "regex-v4-gdscript"
 
 // Version returns the extractor's signature used for dedup
 // invalidation. See SymbolExtractor.Version.
@@ -242,9 +242,117 @@ func (e *RegexExtractor) extractLanguageSpecificReferences(filePath string, cont
 		return e.extractJSPropertyReferences(filePath, content, lines, functionBoundaries)
 	case "lua":
 		return e.extractLuaBracketKeyReferences(filePath, content, lines, patterns, functionBoundaries)
+	case "gdscript":
+		return e.extractGDScriptPropertyReferences(filePath, content, lines, functionBoundaries)
 	default:
 		return nil
 	}
+}
+
+var (
+	gdPropertyReadRe  = regexp.MustCompile(`\b(?:[A-Za-z_][A-Za-z0-9_]*\.)+([A-Za-z_][A-Za-z0-9_]*)\b`)
+	gdPropertyWriteRe = regexp.MustCompile(`\b(?:[A-Za-z_][A-Za-z0-9_]*\.)+([A-Za-z_][A-Za-z0-9_]*)\s*(?:[+\-*/%])?=`)
+)
+
+// gdBuiltinRoots filters property chains rooted at engine singletons and
+// built-in classes (Vector2.ZERO, Engine.max_fps) — they can never resolve to
+// project properties.
+var gdBuiltinRoots = map[string]bool{
+	// Engine singletons
+	"Engine": true, "Input": true, "InputMap": true, "OS": true, "Time": true,
+	"Performance": true, "DisplayServer": true, "RenderingServer": true,
+	"PhysicsServer": true, "PhysicsServer2D": true, "PhysicsServer3D": true,
+	"AudioServer": true, "NavigationServer": true, "TranslationServer": true,
+	"XRServer": true, "ResourceLoader": true, "ResourceSaver": true,
+	"WorkerThreadPool": true, "ProjectSettings": true, "ClassDB": true,
+	"JSON": true, "Marshalls": true, "EngineDebugger": true,
+	// Math / geometry built-ins
+	"Vector2": true, "Vector2i": true, "Vector3": true, "Vector3i": true,
+	"Vector4": true, "Vector4i": true, "Color": true, "Rect2": true,
+	"Rect2i": true, "Transform2D": true, "Transform3D": true, "Basis": true,
+	"Quaternion": true, "AABB": true, "Plane": true, "Projection": true,
+	// Common scene / resource classes used as statics or chained roots
+	"Node": true, "Node2D": true, "Node3D": true, "Control": true,
+	"CanvasItem": true, "Resource": true, "PackedScene": true, "Image": true,
+	"ImageTexture": true, "Texture2D": true, "Shader": true, "Material": true,
+	"ShaderMaterial": true, "SceneTree": true, "Viewport": true, "Window": true,
+	"Tween": true, "Timer": true, "FileAccess": true, "DirAccess": true,
+	"Callable": true, "Signal": true, "Dictionary": true, "Array": true,
+	"String": true, "StringName": true, "NodePath": true, "RID": true,
+	"Object": true, "RefCounted": true, "Thread": true, "Mutex": true,
+	"RandomNumberGenerator": true, "InputEvent": true, "InputEventKey": true,
+	"InputEventMouseButton": true, "InputEventMouseMotion": true,
+}
+
+// extractGDScriptPropertyReferences extracts obj.property data references
+// (reads and writes), mirroring extractJSPropertyReferences. Bare same-class
+// accesses (var_name = x inside the declaring class) are intentionally out of
+// scope, matching the JS extractor's obj.prop boundary.
+func (e *RegexExtractor) extractGDScriptPropertyReferences(filePath string, content string, lines []string, functionBoundaries []functionBoundary) []Reference {
+	writeMatches := gdPropertyWriteRe.FindAllStringSubmatchIndex(content, -1)
+	writeStarts := make(map[int]bool, len(writeMatches))
+	refs := make([]Reference, 0, len(writeMatches))
+
+	for _, m := range writeMatches {
+		if len(m) < 4 {
+			continue
+		}
+		start := m[0]
+		writeStarts[start] = true
+		// The write regex cannot express "not ==": `a.b == c` matches up to
+		// the first '='. Drop comparisons by checking the next character.
+		if m[1] < len(content) && content[m[1]] == '=' {
+			continue
+		}
+		name := content[m[2]:m[3]]
+		if !keepGDPropertyReference(name, content[m[0]:m[1]]) {
+			continue
+		}
+		refs = append(refs, buildDataReference(filePath, content, lines, name, start, RefKindWrite, functionBoundaries))
+	}
+
+	readMatches := gdPropertyReadRe.FindAllStringSubmatchIndex(content, -1)
+	for _, m := range readMatches {
+		if len(m) < 4 {
+			continue
+		}
+		start := m[0]
+		if writeStarts[start] {
+			continue
+		}
+		name := content[m[2]:m[3]]
+		if !keepGDPropertyReference(name, content[m[0]:m[1]]) {
+			continue
+		}
+		// obj.method(...) is a call reference (tracked by MethodCall), not a
+		// property read.
+		if strings.HasPrefix(strings.TrimLeft(content[m[1]:], " \t"), "(") {
+			continue
+		}
+		refs = append(refs, buildDataReference(filePath, content, lines, name, start, RefKindRead, functionBoundaries))
+	}
+
+	return dedupeReferences(refs)
+}
+
+func keepGDPropertyReference(name string, expr string) bool {
+	if name == "" || strings.HasPrefix(name, "_") {
+		return false
+	}
+	return !gdBuiltinRoots[gdRootIdentifier(expr)]
+}
+
+func gdRootIdentifier(expr string) string {
+	expr = strings.TrimSpace(expr)
+	for i, r := range expr {
+		if r == '.' || r == ' ' || r == '\t' || r == '\n' {
+			if i == 0 {
+				return ""
+			}
+			return expr[:i]
+		}
+	}
+	return expr
 }
 
 var (

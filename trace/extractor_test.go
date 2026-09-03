@@ -1595,3 +1595,65 @@ func refresh():
 		t.Errorf("expected update_hud called from _ready, got callers %v", callers)
 	}
 }
+
+func TestRegexExtractor_ExtractReferences_GDScript_Properties(t *testing.T) {
+	extractor := NewRegexExtractor()
+	ctx := context.Background()
+
+	content := `extends Node
+
+func refresh_hud(node):
+	print(node.node_id)
+	hud.label.text = node.tooltip_text
+	game_state.total_likes = game_state.total_likes + 1
+	counter.views += 1
+	if game_state.is_activated == true:
+		Engine.max_fps = 60
+	node.get_parent().queue_free()
+`
+
+	_, refs, err := extractor.ExtractAll(ctx, "test.gd", content)
+	if err != nil {
+		t.Fatalf("ExtractAll failed: %v", err)
+	}
+
+	reads := make(map[string]int)
+	writes := make(map[string]int)
+	for _, ref := range refs {
+		switch ref.Kind {
+		case RefKindRead:
+			reads[ref.SymbolName]++
+		case RefKindWrite:
+			writes[ref.SymbolName]++
+		}
+	}
+
+	// obj.property reads
+	if reads["node_id"] < 1 {
+		t.Errorf("expected node_id read, got reads %v", reads)
+	}
+	if reads["tooltip_text"] < 1 {
+		t.Errorf("expected tooltip_text read, got reads %v", reads)
+	}
+	if reads["is_activated"] >= 1 {
+		t.Errorf("expected == comparison not to count as read/write, got reads %v writes %v", reads, writes)
+	}
+	// writes: plain assignment, chained write target, compound assignment
+	if writes["text"] < 1 {
+		t.Errorf("expected hud.label.text write, got writes %v", writes)
+	}
+	if writes["total_likes"] < 1 {
+		t.Errorf("expected total_likes write, got writes %v", writes)
+	}
+	if writes["views"] < 1 {
+		t.Errorf("expected compound += write for views, got writes %v", writes)
+	}
+	// engine builtins filtered
+	if writes["max_fps"] >= 1 || reads["max_fps"] >= 1 {
+		t.Errorf("expected Engine.max_fps filtered as builtin root, got writes %v reads %v", writes, reads)
+	}
+	// method calls are not property reads
+	if reads["get_parent"] >= 1 || reads["queue_free"] >= 1 {
+		t.Errorf("expected method calls excluded from property reads, got reads %v", reads)
+	}
+}
