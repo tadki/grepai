@@ -248,7 +248,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Maximum depth for graph traversal (default: 2)"),
 		),
 		mcp.WithNumber("limit",
-			mcp.Description("Maximum nodes returned (default: 100, hard cap 300). Hub symbols at depth >= 2 otherwise produce graphs far past tool token limits; a truncated result carries truncated=true."),
+			mcp.Description("Maximum nodes returned (default: 50, hard cap 300; edges are capped at twice the node limit). Hub symbols at depth >= 2 otherwise produce graphs far past tool token limits; a truncated result carries truncated=true."),
 		),
 		mcp.WithString("format",
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
@@ -984,34 +984,46 @@ func workspacePathExamples(projects []config.ProjectEntry) []string {
 // breadth-first-collected nodes stable by name order, and drops edges that
 // reference removed nodes. Marks the graph truncated when anything was cut.
 func capCallGraph(g *trace.CallGraph, maxNodes int) {
-	if g == nil || len(g.Nodes) <= maxNodes {
+	if g == nil {
 		return
 	}
+	maxEdges := maxNodes * 2
 
-	kept := make(map[string]bool, maxNodes)
-	kept[g.Root] = true
-	for name := range g.Nodes {
-		if len(kept) >= maxNodes {
-			break
-		}
-		kept[name] = true
+	// Edge-only overflow still counts as truncation.
+	if len(g.Nodes) > maxNodes || len(g.Edges) > maxEdges {
+		g.Truncated = true
 	}
 
-	nodes := make(map[string]trace.Symbol, len(kept))
-	for name, sym := range g.Nodes {
-		if kept[name] {
-			nodes[name] = sym
+	if len(g.Nodes) > maxNodes {
+		kept := make(map[string]bool, maxNodes)
+		kept[g.Root] = true
+		for name := range g.Nodes {
+			if len(kept) >= maxNodes {
+				break
+			}
+			kept[name] = true
 		}
+		nodes := make(map[string]trace.Symbol, len(kept))
+		for name, sym := range g.Nodes {
+			if kept[name] {
+				nodes[name] = sym
+			}
+		}
+		g.Nodes = nodes
 	}
+
 	edges := make([]trace.CallEdge, 0, len(g.Edges))
 	for _, e := range g.Edges {
-		if kept[e.Caller] && kept[e.Callee] {
-			edges = append(edges, e)
+		if len(edges) >= maxEdges {
+			break
+		}
+		if _, ok := g.Nodes[e.Caller]; ok {
+			if _, ok := g.Nodes[e.Callee]; ok {
+				edges = append(edges, e)
+			}
 		}
 	}
-	g.Nodes = nodes
 	g.Edges = edges
-	g.Truncated = true
 }
 
 func buildWorkspacePathValidationError(path string, selectedProjects, selectedProjectRoots, exampleValidPaths []string, details string) string {
@@ -1546,9 +1558,9 @@ func (s *Server) handleTraceGraph(ctx context.Context, request mcp.CallToolReque
 
 	// Bound the graph size — hub symbols (_process, _ready) at depth >= 2
 	// otherwise produce graphs far past tool token limits.
-	limit := request.GetInt("limit", 100)
+	limit := request.GetInt("limit", 50)
 	if limit <= 0 {
-		limit = 100
+		limit = 50
 	}
 	if limit > 300 {
 		limit = 300
@@ -1583,6 +1595,9 @@ func (s *Server) handleTraceGraph(ctx context.Context, request mcp.CallToolReque
 			graph, graphErr := ss.GetCallGraph(ctx, symbolName, depth)
 			if graphErr != nil {
 				continue
+			}
+			if graph.Truncated {
+				merged.Truncated = true
 			}
 			for name, sym := range graph.Nodes {
 				if _, exists := merged.Nodes[name]; !exists {

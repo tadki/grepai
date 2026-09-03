@@ -962,6 +962,9 @@ func TestCapCallGraphTruncatesAndKeepsRoot(t *testing.T) {
 	if !g.Truncated {
 		t.Fatal("expected truncated=true")
 	}
+	if len(g.Edges) > 200 {
+		t.Fatalf("edges = %d, want <= 2x node limit", len(g.Edges))
+	}
 	for _, e := range g.Edges {
 		if _, ok := g.Nodes[e.Callee]; !ok {
 			t.Fatalf("edge references removed node %s", e.Callee)
