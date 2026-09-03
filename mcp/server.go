@@ -1904,12 +1904,21 @@ func (s *Server) handleIndexStatus(ctx context.Context, request mcp.CallToolRequ
 			Model:     ws.Embedder.Model,
 		}
 
+		usePostgres := ws.Store.Backend == "postgres" && ws.Store.Postgres.DSN != ""
 		for _, p := range ws.Projects {
 			ps := WorkspaceProjectStatus{
 				Name: p.Name,
 				Path: p.Path,
 			}
-			ss := trace.NewGOBSymbolStore(config.GetSymbolIndexPath(p.Path))
+			var ss trace.SymbolStore
+			if usePostgres {
+				if pgStore, pgErr := trace.NewPostgresSymbolStore(ctx, ws.Store.Postgres.DSN, ws.Name, p.Name); pgErr == nil {
+					ss = pgStore
+				}
+			}
+			if ss == nil {
+				ss = trace.NewGOBSymbolStore(config.GetSymbolIndexPath(p.Path))
+			}
 			if loadErr := ss.Load(ctx); loadErr == nil {
 				if symbolStats, statsErr := ss.GetStats(ctx); statsErr == nil && symbolStats.TotalSymbols > 0 {
 					ps.SymbolsReady = true
