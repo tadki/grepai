@@ -247,6 +247,9 @@ func (s *Server) registerTools() {
 		mcp.WithNumber("depth",
 			mcp.Description("Maximum depth for graph traversal (default: 2)"),
 		),
+		mcp.WithNumber("limit",
+			mcp.Description("Maximum nodes returned (default: 100, hard cap 300). Hub symbols at depth >= 2 otherwise produce graphs far past tool token limits; a truncated result carries truncated=true."),
+		),
 		mcp.WithString("format",
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
@@ -977,6 +980,40 @@ func workspacePathExamples(projects []config.ProjectEntry) []string {
 	return examples
 }
 
+// capCallGraph trims a call graph to at most maxNodes, keeping the root and
+// breadth-first-collected nodes stable by name order, and drops edges that
+// reference removed nodes. Marks the graph truncated when anything was cut.
+func capCallGraph(g *trace.CallGraph, maxNodes int) {
+	if g == nil || len(g.Nodes) <= maxNodes {
+		return
+	}
+
+	kept := make(map[string]bool, maxNodes)
+	kept[g.Root] = true
+	for name := range g.Nodes {
+		if len(kept) >= maxNodes {
+			break
+		}
+		kept[name] = true
+	}
+
+	nodes := make(map[string]trace.Symbol, len(kept))
+	for name, sym := range g.Nodes {
+		if kept[name] {
+			nodes[name] = sym
+		}
+	}
+	edges := make([]trace.CallEdge, 0, len(g.Edges))
+	for _, e := range g.Edges {
+		if kept[e.Caller] && kept[e.Callee] {
+			edges = append(edges, e)
+		}
+	}
+	g.Nodes = nodes
+	g.Edges = edges
+	g.Truncated = true
+}
+
 func buildWorkspacePathValidationError(path string, selectedProjects, selectedProjectRoots, exampleValidPaths []string, details string) string {
 	sort.Strings(selectedProjects)
 	sort.Strings(selectedProjectRoots)
@@ -1210,7 +1247,14 @@ func (s *Server) handleTraceCallersFromStores(ctx context.Context, symbolName st
 					log.Printf("Warning: failed to lookup caller symbol %q: %v", ref.CallerName, err)
 				}
 				if len(callerSyms) > 0 {
-					callerSym = callerSyms[0]
+					// Prefer the definition in the caller's own file —
+					// same-name symbols in other files (or languages) must
+					// not be shown as this caller's definition.
+					if picked := trace.PickSymbolForFile(callerSyms, ref.CallerFile); picked != nil {
+						callerSym = *picked
+					} else {
+						callerSym = callerSyms[0]
+					}
 					break
 				}
 			}
@@ -1248,7 +1292,14 @@ func (s *Server) handleTraceCallersFromStores(ctx context.Context, symbolName st
 					log.Printf("Warning: failed to lookup caller symbol %q: %v", ref.CallerName, err)
 				}
 				if len(callerSyms) > 0 {
-					callerSym = callerSyms[0]
+					// Prefer the definition in the caller's own file —
+					// same-name symbols in other files (or languages) must
+					// not be shown as this caller's definition.
+					if picked := trace.PickSymbolForFile(callerSyms, ref.CallerFile); picked != nil {
+						callerSym = *picked
+					} else {
+						callerSym = callerSyms[0]
+					}
 					break
 				}
 			}
@@ -1389,7 +1440,14 @@ func (s *Server) handleTraceCalleesFromStores(ctx context.Context, symbolName st
 					log.Printf("Warning: failed to lookup callee symbol %q: %v", ref.SymbolName, err)
 				}
 				if len(calleeSyms) > 0 {
-					calleeSym = calleeSyms[0]
+					// Prefer the definition in the call site's own file; a
+					// same-name function elsewhere (mocks, other languages)
+					// must not be shown as this callee's definition.
+					if picked := trace.PickSymbolForFile(calleeSyms, ref.File); picked != nil {
+						calleeSym = *picked
+					} else {
+						calleeSym = calleeSyms[0]
+					}
 					break
 				}
 			}
@@ -1427,7 +1485,14 @@ func (s *Server) handleTraceCalleesFromStores(ctx context.Context, symbolName st
 					log.Printf("Warning: failed to lookup callee symbol %q: %v", ref.SymbolName, err)
 				}
 				if len(calleeSyms) > 0 {
-					calleeSym = calleeSyms[0]
+					// Prefer the definition in the call site's own file; a
+					// same-name function elsewhere (mocks, other languages)
+					// must not be shown as this callee's definition.
+					if picked := trace.PickSymbolForFile(calleeSyms, ref.File); picked != nil {
+						calleeSym = *picked
+					} else {
+						calleeSym = calleeSyms[0]
+					}
 					break
 				}
 			}
@@ -1479,6 +1544,16 @@ func (s *Server) handleTraceGraph(ctx context.Context, request mcp.CallToolReque
 		depth = 2
 	}
 
+	// Bound the graph size — hub symbols (_process, _ready) at depth >= 2
+	// otherwise produce graphs far past tool token limits.
+	limit := request.GetInt("limit", 100)
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 300 {
+		limit = 300
+	}
+
 	format := request.GetString("format", "json")
 	workspace := s.resolveWorkspace(request.GetString("workspace", ""))
 	project := request.GetString("project", "")
@@ -1523,6 +1598,8 @@ func (s *Server) handleTraceGraph(ctx context.Context, request mcp.CallToolReque
 			}
 		}
 
+		capCallGraph(merged, limit)
+
 		result := trace.TraceResult{
 			Query: symbolName,
 			Mode:  "fast",
@@ -1556,6 +1633,7 @@ func (s *Server) handleTraceGraph(ctx context.Context, request mcp.CallToolReque
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to build call graph: %v", err)), nil
 	}
+	capCallGraph(graph, limit)
 
 	result := trace.TraceResult{
 		Query: symbolName,

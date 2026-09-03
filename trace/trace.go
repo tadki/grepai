@@ -196,3 +196,21 @@ type SymbolStore interface {
 	// GetStats returns statistics about the symbol index.
 	GetStats(ctx context.Context) (*SymbolStats, error)
 }
+
+// PickSymbolForFile returns the symbol definition that lives in the given
+// file, falling back to the first definition. Callers use it to keep
+// same-name symbols from cross-linking (a Python simulate must not be shown
+// as the definition of a GDScript simulate calling _process).
+func PickSymbolForFile(symbols []Symbol, file string) *Symbol {
+	if len(symbols) == 0 {
+		return nil
+	}
+	if file != "" {
+		for i := range symbols {
+			if symbols[i].File == file {
+				return &symbols[i]
+			}
+		}
+	}
+	return &symbols[0]
+}

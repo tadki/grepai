@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -939,5 +940,37 @@ func TestPathPrefixAllowedByProjectRoots_mixed_roots_accept_on_unverifiable(t *t
 	// own it — reject only when every root was checked and none matched.
 	if !pathPrefixAllowedByProjectRoots("scenes/ui", []string{projectRoot, missingRoot}) {
 		t.Fatal("expected unverifiable root to keep the prefix allowed")
+	}
+}
+
+func TestCapCallGraphTruncatesAndKeepsRoot(t *testing.T) {
+	g := &trace.CallGraph{Root: "hub", Nodes: map[string]trace.Symbol{}, Edges: []trace.CallEdge{}}
+	for i := 0; i < 250; i++ {
+		name := fmt.Sprintf("f_%03d", i)
+		g.Nodes[name] = trace.Symbol{Name: name, File: "fan.gd"}
+		g.Edges = append(g.Edges, trace.CallEdge{Caller: "hub", Callee: name})
+	}
+	g.Nodes["hub"] = trace.Symbol{Name: "hub", File: "fan.gd"}
+
+	capCallGraph(g, 100)
+	if len(g.Nodes) > 100 {
+		t.Fatalf("nodes = %d, want <= 100", len(g.Nodes))
+	}
+	if _, ok := g.Nodes["hub"]; !ok {
+		t.Fatal("root must survive truncation")
+	}
+	if !g.Truncated {
+		t.Fatal("expected truncated=true")
+	}
+	for _, e := range g.Edges {
+		if _, ok := g.Nodes[e.Callee]; !ok {
+			t.Fatalf("edge references removed node %s", e.Callee)
+		}
+	}
+
+	small := &trace.CallGraph{Root: "a", Nodes: map[string]trace.Symbol{"a": {}, "b": {}}, Edges: nil}
+	capCallGraph(small, 100)
+	if small.Truncated {
+		t.Fatal("graph under the limit must not be marked truncated")
 	}
 }

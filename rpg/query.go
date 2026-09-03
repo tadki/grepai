@@ -67,10 +67,6 @@ type ExploreResult struct {
 	Nodes     map[string]*Node `json:"nodes"`
 	Edges     []*Edge          `json:"edges"`
 	Depth     int              `json:"depth"`
-	// AvailableEdgeTypes lists the edge types actually present at the start
-	// node when an edge_types filter removed everything — an empty result
-	// with, say, only feature_parent edges available is confusing otherwise.
-	AvailableEdgeTypes []string `json:"available_edge_types,omitempty"`
 }
 
 // QueryEngine provides the 3 RPG query operations.
@@ -389,28 +385,6 @@ func (qe *QueryEngine) Explore(_ context.Context, req ExploreRequest) (*ExploreR
 			}
 
 			queue = append(queue, bfsEntry{nodeID: neighborID, depth: nextDepth})
-		}
-	}
-
-	// An edge_types filter can legitimately remove every edge (a category
-	// node only has feature_parent edges upstream). When that happens, list
-	// the edge types actually available at the start node so the empty
-	// result is self-explanatory.
-	if filterEdges && len(result.Edges) == 0 {
-		available := make(map[EdgeType]bool)
-		for _, e := range qe.graph.GetOutgoing(startNode.ID) {
-			available[e.Type] = true
-		}
-		for _, e := range qe.graph.GetIncoming(startNode.ID) {
-			available[e.Type] = true
-		}
-		if len(available) > 0 {
-			types := make([]string, 0, len(available))
-			for t := range available {
-				types = append(types, string(t))
-			}
-			sort.Strings(types)
-			result.AvailableEdgeTypes = types
 		}
 	}
 
