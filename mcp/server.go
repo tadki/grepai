@@ -2259,20 +2259,27 @@ func (s *Server) tryLoadWorkspaceRPG(ctx context.Context, workspaceName, project
 		}
 	}
 
+	usePostgres := ws.Store.Backend == "postgres" && ws.Store.Postgres.DSN != ""
 	for _, p := range projects {
 		if p.Path == "" {
 			continue
 		}
-		cfg, err := config.Load(p.Path)
-		if err != nil {
-			log.Printf("Warning: skipping RPG for project %s: failed to load config: %v", p.Name, err)
-			continue
-		}
-		if !cfg.RPG.Enabled {
-			continue
+		if usePostgres {
+			// The builder host owns the project config; when it is not
+			// present locally, a non-empty shared RPG row is the enablement
+			// signal.
+		} else {
+			cfg, err := config.Load(p.Path)
+			if err != nil {
+				log.Printf("Warning: skipping RPG for project %s: failed to load config: %v", p.Name, err)
+				continue
+			}
+			if !cfg.RPG.Enabled {
+				continue
+			}
 		}
 		var rpgStore rpg.RPGStore
-		if ws.Store.Backend == "postgres" && ws.Store.Postgres.DSN != "" {
+		if usePostgres {
 			// Postgres-backed workspaces keep the RPG graph in the shared
 			// store too, so serving hosts don't need the project files
 			// locally.
