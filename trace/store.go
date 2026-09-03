@@ -235,8 +235,15 @@ func (s *GOBSymbolStore) SaveFileWithContentHash(ctx context.Context, filePath s
 		s.index.References[ref.SymbolName] = append(s.index.References[ref.SymbolName], ref)
 	}
 
-	// Build call graph edges
+	// Build call graph edges from call references only. Property reads and
+	// writes are data dependencies, not invocations — mixing them in made
+	// callees lists and call graphs carry assignment edges (they also never
+	// resolve to symbol nodes downstream, e.g. RPG invocation wiring skips
+	// them anyway).
 	for _, ref := range refs {
+		if !isCallReference(ref) {
+			continue
+		}
 		if ref.CallerName != "" && ref.CallerName != "<top-level>" {
 			s.index.CallGraph = append(s.index.CallGraph, CallEdge{
 				Caller:   ref.CallerName,
@@ -351,7 +358,10 @@ func (s *GOBSymbolStore) LookupCallers(ctx context.Context, symbolName string) (
 	return filterByReferenceKinds(refs, RefKindCall, ""), nil
 }
 
-// LookupCallees finds all symbols called by a function.
+// LookupCallees finds all symbols called by a function. When file is
+// non-empty, edges are scoped to that file: same-name functions in other
+// files (a _ready in every script, mocks shadowing real functions) are
+// distinct symbols and must not merge into one callees list.
 func (s *GOBSymbolStore) LookupCallees(ctx context.Context, symbolName string, file string) ([]Reference, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -361,6 +371,9 @@ func (s *GOBSymbolStore) LookupCallees(ctx context.Context, symbolName string, f
 
 	for _, edge := range s.index.CallGraph {
 		if edge.Caller == symbolName {
+			if file != "" && edge.File != file {
+				continue
+			}
 			key := fmt.Sprintf("%s:%d", edge.File, edge.Line)
 			if seen[key] {
 				continue
@@ -459,7 +472,11 @@ func (s *GOBSymbolStore) GetCallGraph(ctx context.Context, symbolName string, de
 		Depth: depth,
 	}
 
-	// BFS to build graph up to depth
+	// BFS to build graph up to depth. A node/edge budget bounds the output:
+	// hub symbols (a _ready in every script) at depth 2 otherwise produce
+	// graphs with thousands of nodes that blow callers' token limits.
+	const maxGraphNodes = 300
+	const maxGraphEdges = 1000
 	visited := make(map[string]bool)
 	type queueItem struct {
 		name  string
@@ -505,6 +522,10 @@ func (s *GOBSymbolStore) GetCallGraph(ctx context.Context, symbolName string, de
 		if symbols, ok := s.index.Symbols[current.name]; ok && len(symbols) > 0 {
 			graph.Nodes[current.name] = symbols[0]
 		}
+		if len(graph.Nodes) >= maxGraphNodes {
+			graph.Truncated = true
+			break
+		}
 
 		// Find edges (both callers and callees)
 		for _, edge := range s.index.CallGraph {
@@ -514,6 +535,10 @@ func (s *GOBSymbolStore) GetCallGraph(ctx context.Context, symbolName string, de
 				}
 				edgeKey := fmt.Sprintf("%s->%s", edge.Caller, edge.Callee)
 				if !edgeSeen[edgeKey] {
+					if len(graph.Edges) >= maxGraphEdges {
+						graph.Truncated = true
+						break
+					}
 					graph.Edges = append(graph.Edges, edge)
 					edgeSeen[edgeKey] = true
 				}
@@ -527,6 +552,10 @@ func (s *GOBSymbolStore) GetCallGraph(ctx context.Context, symbolName string, de
 				}
 				edgeKey := fmt.Sprintf("%s->%s", edge.Caller, edge.Callee)
 				if !edgeSeen[edgeKey] {
+					if len(graph.Edges) >= maxGraphEdges {
+						graph.Truncated = true
+						break
+					}
 					graph.Edges = append(graph.Edges, edge)
 					edgeSeen[edgeKey] = true
 				}

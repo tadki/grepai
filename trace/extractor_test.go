@@ -1717,3 +1717,57 @@ def configure():
 		t.Error("python: missing register_subsystem call after apostrophe comment")
 	}
 }
+
+func TestRegexExtractor_GDScriptDeclarationIsNotACallRef(t *testing.T) {
+	extractor := NewRegexExtractor()
+	ctx := context.Background()
+
+	content := `extends Node
+
+func _exit_tree():
+	cleanup()
+
+func _ready():
+	setup()
+`
+	_, refs, err := extractor.ExtractAll(ctx, "save_manager.gd", content)
+	if err != nil {
+		t.Fatalf("ExtractAll failed: %v", err)
+	}
+	for _, ref := range refs {
+		if ref.SymbolName == "_ready" || ref.SymbolName == "_exit_tree" {
+			t.Errorf("declaration line produced a call ref: %s caller=%s line=%d", ref.SymbolName, ref.CallerName, ref.Line)
+		}
+		if ref.SymbolName == "setup" && ref.CallerName != "_ready" {
+			t.Errorf("setup caller = %q, want _ready", ref.CallerName)
+		}
+		if ref.SymbolName == "cleanup" && ref.CallerName != "_exit_tree" {
+			t.Errorf("cleanup caller = %q, want _exit_tree", ref.CallerName)
+		}
+	}
+}
+
+func TestRegexExtractor_GDScriptCommentPropertyNotIndexed(t *testing.T) {
+	extractor := NewRegexExtractor()
+	ctx := context.Background()
+
+	content := `extends Node
+
+## EconomyManager.like_total. See docs.
+func refresh():
+	hud.label.text = game_state.like_total
+`
+	_, refs, err := extractor.ExtractAll(ctx, "hud.gd", content)
+	if err != nil {
+		t.Fatalf("ExtractAll failed: %v", err)
+	}
+	reads := 0
+	for _, ref := range refs {
+		if ref.SymbolName == "like_total" && ref.Kind == RefKindRead {
+			reads++
+		}
+	}
+	if reads != 1 {
+		t.Fatalf("like_total reads = %d, want 1 (comment must not count)", reads)
+	}
+}

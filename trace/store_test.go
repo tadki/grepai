@@ -2,6 +2,7 @@ package trace
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -644,5 +645,90 @@ func TestGOBSymbolStore_ReferenceKindFilters(t *testing.T) {
 	}
 	if len(writers) != 1 || writers[0].Kind != RefKindWrite {
 		t.Fatalf("expected only write refs, got %+v", writers)
+	}
+}
+
+func TestGOBSymbolStore_LookupCalleesScopedToCallerFile(t *testing.T) {
+	store := NewGOBSymbolStore(t.TempDir() + "/idx.gob")
+	ctx := context.Background()
+
+	// Two same-name functions in different files calling different things.
+	if err := store.SaveFile(ctx, "real.gd", []Symbol{{Name: "save_game", Kind: KindFunction, File: "real.gd"}}, []Reference{
+		{SymbolName: "persist", Kind: RefKindCall, File: "real.gd", Line: 5, CallerName: "save_game"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveFile(ctx, "mock.gd", []Symbol{{Name: "save_game", Kind: KindFunction, File: "mock.gd"}}, []Reference{
+		{SymbolName: "fake_persist", Kind: RefKindCall, File: "mock.gd", Line: 3, CallerName: "save_game"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	callees, err := store.LookupCallees(ctx, "save_game", "real.gd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(callees) != 1 || callees[0].SymbolName != "persist" {
+		t.Fatalf("callees = %v, want only persist from real.gd", callees)
+	}
+
+	// Without a file, both files' edges are returned (unresolved-symbol path).
+	all, err := store.LookupCallees(ctx, "save_game", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("unscoped callees = %d, want 2", len(all))
+	}
+}
+
+func TestGOBSymbolStore_PropertyRefsDoNotBecomeCallEdges(t *testing.T) {
+	store := NewGOBSymbolStore(t.TempDir() + "/idx.gob")
+	ctx := context.Background()
+
+	if err := store.SaveFile(ctx, "svc.gd", []Symbol{{Name: "save_game", Kind: KindFunction, File: "svc.gd"}}, []Reference{
+		{SymbolName: "saved_at", Kind: RefKindWrite, File: "svc.gd", Line: 4, CallerName: "save_game"},
+		{SymbolName: "persist", Kind: RefKindCall, File: "svc.gd", Line: 5, CallerName: "save_game"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	edges, err := store.GetCallEdges(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(edges) != 1 || edges[0].Callee != "persist" {
+		t.Fatalf("edges = %v, want only the persist call edge", edges)
+	}
+}
+
+func TestGOBSymbolStore_CallGraphBudgetTruncates(t *testing.T) {
+	store := NewGOBSymbolStore(t.TempDir() + "/idx.gob")
+	ctx := context.Background()
+
+	// A chain of 400 unique functions, each calling the next: depth-2 from
+	// any node is small, but query the FIRST node with a graph that fans out
+	// — instead build a fan: hub() calls f0..f399, each fn is a symbol.
+	const fan = 400
+	syms := []Symbol{{Name: "hub", Kind: KindFunction, File: "fan.gd", Line: 1}}
+	var refs []Reference
+	for i := 0; i < fan; i++ {
+		name := fmt.Sprintf("f_%03d", i)
+		syms = append(syms, Symbol{Name: name, Kind: KindFunction, File: "fan.gd", Line: 10 + i})
+		refs = append(refs, Reference{SymbolName: name, Kind: RefKindCall, File: "fan.gd", Line: 2, CallerName: "hub"})
+	}
+	if err := store.SaveFile(ctx, "fan.gd", syms, refs); err != nil {
+		t.Fatal(err)
+	}
+
+	graph, err := store.GetCallGraph(ctx, "hub", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(graph.Nodes) > 300 {
+		t.Fatalf("nodes = %d, want <= 300", len(graph.Nodes))
+	}
+	if !graph.Truncated {
+		t.Fatal("expected Truncated=true when the node budget is hit")
 	}
 }

@@ -913,3 +913,41 @@ func TestExplore_UsesStartCodeEntitiesAndEntityFilter(t *testing.T) {
 		t.Fatalf("expected symbol node to be included with function filter, got %+v", result.Nodes)
 	}
 }
+
+func TestQueryEngine_ExploreEmptyFilterListsAvailableEdgeTypes(t *testing.T) {
+	g := NewGraph()
+	g.AddNode(&Node{ID: "cat:autoload", Kind: KindCategory})
+	g.AddNode(&Node{ID: "feat:on-ready", Kind: KindSymbol, Feature: "on-ready"})
+	g.AddEdge(&Edge{From: "cat:autoload", To: "feat:on-ready", Type: EdgeFeatureParent})
+
+	qe := NewQueryEngine(g)
+	result, err := qe.Explore(context.Background(), ExploreRequest{
+		StartNodeID: "cat:autoload",
+		Depth:       1,
+		EdgeTypes:   []EdgeType{EdgeContains},
+	})
+	if err != nil {
+		t.Fatalf("Explore failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result")
+	}
+	if len(result.Edges) != 0 {
+		t.Fatalf("edges = %d, want 0 (only feature_parent exists)", len(result.Edges))
+	}
+	if len(result.AvailableEdgeTypes) != 1 || result.AvailableEdgeTypes[0] != string(EdgeFeatureParent) {
+		t.Fatalf("AvailableEdgeTypes = %v, want [feature_parent]", result.AvailableEdgeTypes)
+	}
+
+	// Without a filter the edge is returned and no hint is set.
+	result2, err := qe.Explore(context.Background(), ExploreRequest{StartNodeID: "cat:autoload", Depth: 1})
+	if err != nil {
+		t.Fatalf("Explore failed: %v", err)
+	}
+	if len(result2.Edges) != 1 {
+		t.Fatalf("unfiltered edges = %d, want 1", len(result2.Edges))
+	}
+	if len(result2.AvailableEdgeTypes) != 0 {
+		t.Fatalf("AvailableEdgeTypes should be empty without filter, got %v", result2.AvailableEdgeTypes)
+	}
+}

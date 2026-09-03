@@ -31,7 +31,7 @@ func (e *RegexExtractor) Mode() string {
 // invalidates every persisted RegexExtractor symbol cache entry on the
 // next scan, forcing fresh extraction. Use semver-ish strings ("regex-v2",
 // "regex-v2-lua-funcs") so the bump intent is visible in diffs.
-const regexExtractorVersion = "regex-v5-gdscript"
+const regexExtractorVersion = "regex-v6-gdscript"
 
 // Version returns the extractor's signature used for dedup
 // invalidation. See SymbolExtractor.Version.
@@ -215,7 +215,7 @@ func (e *RegexExtractor) ExtractReferences(ctx context.Context, filePath string,
 		}
 	}
 
-	refs = append(refs, e.extractLanguageSpecificReferences(filePath, content, lines, patterns, functionBoundaries)...)
+	refs = append(refs, e.extractLanguageSpecificReferences(filePath, content, lines, patterns, functionBoundaries, ignored)...)
 
 	return dedupeReferences(refs), nil
 }
@@ -232,7 +232,7 @@ func getReferenceScanContent(content string, patterns *LanguagePatterns, ignored
 }
 
 // extractLanguageSpecificReferences runs supplemental reference extraction for specific languages.
-func (e *RegexExtractor) extractLanguageSpecificReferences(filePath string, content string, lines []string, patterns *LanguagePatterns, functionBoundaries []functionBoundary) []Reference {
+func (e *RegexExtractor) extractLanguageSpecificReferences(filePath string, content string, lines []string, patterns *LanguagePatterns, functionBoundaries []functionBoundary, ignored []bool) []Reference {
 	if patterns == nil {
 		return nil
 	}
@@ -243,7 +243,7 @@ func (e *RegexExtractor) extractLanguageSpecificReferences(filePath string, cont
 	case "lua":
 		return e.extractLuaBracketKeyReferences(filePath, content, lines, patterns, functionBoundaries)
 	case "gdscript":
-		return e.extractGDScriptPropertyReferences(filePath, content, lines, functionBoundaries)
+		return e.extractGDScriptPropertyReferences(filePath, content, lines, functionBoundaries, ignored)
 	default:
 		return nil
 	}
@@ -288,7 +288,7 @@ var gdBuiltinRoots = map[string]bool{
 // (reads and writes), mirroring extractJSPropertyReferences. Bare same-class
 // accesses (var_name = x inside the declaring class) are intentionally out of
 // scope, matching the JS extractor's obj.prop boundary.
-func (e *RegexExtractor) extractGDScriptPropertyReferences(filePath string, content string, lines []string, functionBoundaries []functionBoundary) []Reference {
+func (e *RegexExtractor) extractGDScriptPropertyReferences(filePath string, content string, lines []string, functionBoundaries []functionBoundary, ignored []bool) []Reference {
 	writeMatches := gdPropertyWriteRe.FindAllStringSubmatchIndex(content, -1)
 	writeStarts := make(map[int]bool, len(writeMatches))
 	refs := make([]Reference, 0, len(writeMatches))
@@ -299,6 +299,9 @@ func (e *RegexExtractor) extractGDScriptPropertyReferences(filePath string, cont
 		}
 		start := m[0]
 		writeStarts[start] = true
+		if ignored != nil && ignored[start] {
+			continue
+		}
 		// The write regex cannot express "not ==": `a.b == c` matches up to
 		// the first '='. Drop comparisons by checking the next character.
 		if m[1] < len(content) && content[m[1]] == '=' {
@@ -318,6 +321,9 @@ func (e *RegexExtractor) extractGDScriptPropertyReferences(filePath string, cont
 		}
 		start := m[0]
 		if writeStarts[start] {
+			continue
+		}
+		if ignored != nil && ignored[start] {
 			continue
 		}
 		name := content[m[2]:m[3]]
@@ -599,9 +605,38 @@ func isDeclarationReferenceMatch(content string, patterns *LanguagePatterns, pos
 	switch patterns.Language {
 	case "lua":
 		return isLuaDeclarationReferenceMatch(content, pos)
+	case "gdscript":
+		return isGDScriptDeclarationReferenceMatch(content, pos)
 	default:
 		return false
 	}
+}
+
+// isGDScriptDeclarationReferenceMatch filters call-like matches on `func`
+// declaration lines. Without it every `func name(` declaration becomes a
+// phantom call reference attributed to whatever function boundary contains
+// the declaration line (usually the preceding function), corrupting caller
+// attribution for common names like _ready.
+func isGDScriptDeclarationReferenceMatch(content string, pos int) bool {
+	lineStart := 0
+	if idx := strings.LastIndexByte(content[:pos], '\n'); idx >= 0 {
+		lineStart = idx + 1
+	}
+	lineEnd := len(content)
+	if idx := strings.IndexByte(content[pos:], '\n'); idx >= 0 {
+		lineEnd = pos + idx
+	}
+
+	line := content[lineStart:lineEnd]
+	signatureEnd := strings.IndexByte(line, ')')
+	if signatureEnd < 0 || pos >= lineStart+signatureEnd+1 {
+		return false
+	}
+
+	// The match sits inside the parameter-list region of a line whose prefix
+	// ends in `func` (plain, static, or preceded by @annotations).
+	prefix := strings.TrimSpace(content[lineStart:pos])
+	return prefix == "func" || strings.HasSuffix(prefix, " func")
 }
 
 // isLuaDeclarationReferenceMatch filters out call-like matches inside Lua function declarations.

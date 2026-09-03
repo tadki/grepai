@@ -107,6 +107,9 @@ type CallGraph struct {
 	Nodes map[string]Symbol `json:"nodes"`
 	Edges []CallEdge        `json:"edges"`
 	Depth int               `json:"depth"`
+	// Truncated is set when traversal hit the node/edge budget — common for
+	// hub symbols like _ready queried at depth >= 2.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // SymbolStats contains index statistics.
