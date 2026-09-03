@@ -1,9 +1,11 @@
 package trace
 
 import (
+	"bytes"
 	"context"
 	"encoding/gob"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -85,8 +87,19 @@ func (s *GOBSymbolStore) loadUnlocked() error {
 	}
 	defer file.Close()
 
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, file); err != nil {
+		return fmt.Errorf("failed to read symbol index: %w", err)
+	}
+	return s.decodeIndexBytes(buf.Bytes())
+}
+
+// decodeIndexBytes decodes a gob-encoded symbol index payload into the
+// store's in-memory state. Shared by the file-backed and postgres-backed
+// stores.
+func (s *GOBSymbolStore) decodeIndexBytes(buf []byte) error {
 	var data gobSymbolData
-	if err := gob.NewDecoder(file).Decode(&data); err != nil {
+	if err := gob.NewDecoder(bytes.NewReader(buf)).Decode(&data); err != nil {
 		return fmt.Errorf("failed to decode symbol index: %w", err)
 	}
 
@@ -117,6 +130,23 @@ func (s *GOBSymbolStore) loadUnlocked() error {
 	return nil
 }
 
+// encodeIndexBytes serializes the in-memory index to a gob payload. Shared
+// by the file-backed and postgres-backed stores.
+func (s *GOBSymbolStore) encodeIndexBytes() ([]byte, error) {
+	s.index.UpdatedAt = time.Now()
+	data := gobSymbolData{
+		Index:                 *s.index,
+		FileIndex:             s.fileIndex,
+		FileContentHashes:     s.fileContentHashes,
+		FileExtractorVersions: s.fileExtractorVersions,
+	}
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(data); err != nil {
+		return nil, fmt.Errorf("failed to encode symbol index: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
 // Persist writes the index to storage.
 func (s *GOBSymbolStore) Persist(ctx context.Context) error {
 	s.mu.Lock()
@@ -142,12 +172,9 @@ func (s *GOBSymbolStore) Persist(ctx context.Context) error {
 }
 
 func (s *GOBSymbolStore) persistUnlocked() error {
-	s.index.UpdatedAt = time.Now()
-	data := gobSymbolData{
-		Index:                 *s.index,
-		FileIndex:             s.fileIndex,
-		FileContentHashes:     s.fileContentHashes,
-		FileExtractorVersions: s.fileExtractorVersions,
+	buf, err := s.encodeIndexBytes()
+	if err != nil {
+		return err
 	}
 
 	tmpFile, err := os.CreateTemp(filepath.Dir(s.indexPath), filepath.Base(s.indexPath)+".tmp-*")
@@ -163,9 +190,9 @@ func (s *GOBSymbolStore) persistUnlocked() error {
 		}
 	}()
 
-	if err := gob.NewEncoder(tmpFile).Encode(data); err != nil {
+	if _, err := tmpFile.Write(buf); err != nil {
 		_ = tmpFile.Close()
-		return fmt.Errorf("failed to encode symbol index: %w", err)
+		return fmt.Errorf("failed to write symbol index temp file: %w", err)
 	}
 	if err := tmpFile.Sync(); err != nil {
 		_ = tmpFile.Close()

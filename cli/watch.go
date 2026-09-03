@@ -687,8 +687,20 @@ func startRPGRealtimeWorkers(ctx context.Context, projectLabel string, symbolSto
 	}()
 }
 
+// projectSymbolStore is the surface the watch loops need from a symbol
+// store. Satisfied by both the file-backed (*trace.GOBSymbolStore) and
+// postgres-backed (*trace.PostgresSymbolStore) implementations, so workspace
+// mode can persist symbols into the shared store.
+//
 //nolint:unused // Retained for upcoming watch-loop refactor across fg/bg modes.
-func runWatchLoop(ctx context.Context, st store.VectorStore, symbolStore *trace.GOBSymbolStore, w *watcher.Watcher, idx *indexer.Indexer, scanner *indexer.Scanner, extractor *trace.RegexExtractor, tracedLanguages []string, projectRoot string, cfg *config.Config, isBackgroundChild bool, processors ...*framework.ProcessorRegistry) error {
+type projectSymbolStore interface {
+	trace.SymbolStore
+	SaveFileWithSignature(ctx context.Context, filePath string, contentHash, extractorVersion string, symbols []trace.Symbol, refs []trace.Reference) error
+	GetFileContentHash(filePath string) (string, bool)
+	GetFileExtractorVersion(filePath string) (string, bool)
+}
+
+func runWatchLoop(ctx context.Context, st store.VectorStore, symbolStore projectSymbolStore, w *watcher.Watcher, idx *indexer.Indexer, scanner *indexer.Scanner, extractor *trace.RegexExtractor, tracedLanguages []string, projectRoot string, cfg *config.Config, isBackgroundChild bool, processors ...*framework.ProcessorRegistry) error {
 	// Handle signals
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -747,7 +759,7 @@ func runWatchLoop(ctx context.Context, st store.VectorStore, symbolStore *trace.
 	}
 }
 
-func runInitialScan(ctx context.Context, idx *indexer.Indexer, scanner *indexer.Scanner, extractor *trace.RegexExtractor, symbolStore *trace.GOBSymbolStore, tracedLanguages []string, lastIndexTime time.Time, isBackgroundChild bool, onScan func(current, total int, file string), onEmbed func(info indexer.BatchProgressInfo), processors ...*framework.ProcessorRegistry) (*indexer.IndexStats, error) {
+func runInitialScan(ctx context.Context, idx *indexer.Indexer, scanner *indexer.Scanner, extractor *trace.RegexExtractor, symbolStore projectSymbolStore, tracedLanguages []string, lastIndexTime time.Time, isBackgroundChild bool, onScan func(current, total int, file string), onEmbed func(info indexer.BatchProgressInfo), processors ...*framework.ProcessorRegistry) (*indexer.IndexStats, error) {
 	// Initial scan with progress
 	if !isBackgroundChild {
 		fmt.Println("\nPerforming initial scan...")
@@ -1169,7 +1181,7 @@ func emitInitialStatsSnapshot(ctx context.Context, vectorStore store.VectorStore
 	}
 }
 
-func runProjectWatchLoop(ctx context.Context, st store.VectorStore, symbolStore *trace.GOBSymbolStore, w *watcher.Watcher, idx *indexer.Indexer, scanner *indexer.Scanner, extractor *trace.RegexExtractor, rpgEncoder *rpg.RPGEncoder, rpgStore rpg.RPGStore, tracedLanguages []string, projectRoot string, cfg *config.Config, onEvent watchEventObserver, onActivity watchActivityObserver, onStats watchStatsObserver, processors ...*framework.ProcessorRegistry) error {
+func runProjectWatchLoop(ctx context.Context, st store.VectorStore, symbolStore projectSymbolStore, w *watcher.Watcher, idx *indexer.Indexer, scanner *indexer.Scanner, extractor *trace.RegexExtractor, rpgEncoder *rpg.RPGEncoder, rpgStore rpg.RPGStore, tracedLanguages []string, projectRoot string, cfg *config.Config, onEvent watchEventObserver, onActivity watchActivityObserver, onStats watchStatsObserver, processors ...*framework.ProcessorRegistry) error {
 	persistTicker := time.NewTicker(30 * time.Second)
 	defer persistTicker.Stop()
 
@@ -2078,7 +2090,7 @@ func extractSymbolsWithFramework(ctx context.Context, extractor trace.SymbolExtr
 	return symbols, refs, nil
 }
 
-func handleFileEvent(ctx context.Context, idx *indexer.Indexer, scanner *indexer.Scanner, extractor *trace.RegexExtractor, symbolStore *trace.GOBSymbolStore, rpgEncoder *rpg.RPGEncoder, vectorStore store.VectorStore, enabledLanguages []string, projectRoot string, cfg *config.Config, lastConfigWrite *time.Time, rpgManager *rpgRealtimeManager, event watcher.FileEvent, onActivity watchActivityObserver, onStats watchStatsObserver, processors ...*framework.ProcessorRegistry) {
+func handleFileEvent(ctx context.Context, idx *indexer.Indexer, scanner *indexer.Scanner, extractor *trace.RegexExtractor, symbolStore projectSymbolStore, rpgEncoder *rpg.RPGEncoder, vectorStore store.VectorStore, enabledLanguages []string, projectRoot string, cfg *config.Config, lastConfigWrite *time.Time, rpgManager *rpgRealtimeManager, event watcher.FileEvent, onActivity watchActivityObserver, onStats watchStatsObserver, processors ...*framework.ProcessorRegistry) {
 	// An atomic write -- write to a temp file, then rename it over the target
 	// -- surfaces on the destination path as RENAME/REMOVE with no follow-up
 	// CREATE or WRITE. Editors and coding agents (Claude Code, Cursor) save
@@ -2773,7 +2785,7 @@ type workspaceProjectRuntime struct {
 	scanner         *indexer.Scanner
 	extractor       *trace.RegexExtractor
 	processor       *framework.ProcessorRegistry
-	symbolStore     *trace.GOBSymbolStore
+	symbolStore     projectSymbolStore
 	rpgEncoder      *rpg.RPGEncoder
 	rpgStore        rpg.RPGStore
 	vectorStore     store.VectorStore
@@ -2812,7 +2824,21 @@ func initializeWorkspaceRuntime(ctx context.Context, ws *config.Workspace, proje
 	}
 	idx := indexer.NewIndexer(project.Path, vectorStore, emb, chunker, scanner, projectCfg.Watch.LastIndexTime, processorRegistry)
 	extractor := trace.NewRegexExtractor()
-	symbolStore := trace.NewGOBSymbolStore(config.GetSymbolIndexPath(project.Path))
+	var symbolStore projectSymbolStore
+	if ws.Store.Backend == "postgres" && ws.Store.Postgres.DSN != "" {
+		// Postgres-backed workspaces keep the symbol index in the shared
+		// store so other hosts can serve trace/refs queries without the
+		// project files locally.
+		pgStore, pgErr := trace.NewPostgresSymbolStore(ctx, ws.Store.Postgres.DSN, ws.Name, project.Name)
+		if pgErr != nil {
+			log.Printf("Warning: failed to create postgres symbol store for %s: %v", project.Name, pgErr)
+			symbolStore = trace.NewGOBSymbolStore(config.GetSymbolIndexPath(project.Path))
+		} else {
+			symbolStore = pgStore
+		}
+	} else {
+		symbolStore = trace.NewGOBSymbolStore(config.GetSymbolIndexPath(project.Path))
+	}
 	if err := symbolStore.Load(ctx); err != nil {
 		log.Printf("Warning: failed to load symbol index for %s: %v", project.Path, err)
 	}
@@ -2838,7 +2864,17 @@ func initializeWorkspaceRuntime(ctx context.Context, ws *config.Workspace, proje
 	var rpgEncoder *rpg.RPGEncoder
 	var manager *rpgRealtimeManager
 	if projectCfg.RPG.Enabled {
-		rpgStore = rpg.NewGOBRPGStore(config.GetRPGIndexPath(project.Path))
+		if ws.Store.Backend == "postgres" && ws.Store.Postgres.DSN != "" {
+			pgStore, pgErr := rpg.NewPostgresRPGStore(ctx, ws.Store.Postgres.DSN, ws.Name, project.Name)
+			if pgErr != nil {
+				log.Printf("Warning: failed to create postgres RPG store for %s: %v", project.Name, pgErr)
+				rpgStore = rpg.NewGOBRPGStore(config.GetRPGIndexPath(project.Path))
+			} else {
+				rpgStore = pgStore
+			}
+		} else {
+			rpgStore = rpg.NewGOBRPGStore(config.GetRPGIndexPath(project.Path))
+		}
 		if err := rpgStore.Load(ctx); err != nil {
 			log.Printf("Warning: failed to load RPG index for %s: %v", project.Path, err)
 		}

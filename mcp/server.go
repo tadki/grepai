@@ -2271,7 +2271,20 @@ func (s *Server) tryLoadWorkspaceRPG(ctx context.Context, workspaceName, project
 		if !cfg.RPG.Enabled {
 			continue
 		}
-		rpgStore := rpg.NewGOBRPGStore(config.GetRPGIndexPath(p.Path))
+		var rpgStore rpg.RPGStore
+		if ws.Store.Backend == "postgres" && ws.Store.Postgres.DSN != "" {
+			// Postgres-backed workspaces keep the RPG graph in the shared
+			// store too, so serving hosts don't need the project files
+			// locally.
+			pgStore, pgErr := rpg.NewPostgresRPGStore(ctx, ws.Store.Postgres.DSN, ws.Name, p.Name)
+			if pgErr != nil {
+				log.Printf("Warning: skipping RPG for project %s: failed to create postgres store: %v", p.Name, pgErr)
+				continue
+			}
+			rpgStore = pgStore
+		} else {
+			rpgStore = rpg.NewGOBRPGStore(config.GetRPGIndexPath(p.Path))
+		}
 		if err := rpgStore.Load(ctx); err != nil {
 			// Deliberately no Close(): GOBRPGStore.Close persists the
 			// in-memory graph, so closing after a failed load would write an

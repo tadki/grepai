@@ -1,9 +1,11 @@
 package rpg
 
 import (
+	"bytes"
 	"context"
 	"encoding/gob"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -69,8 +71,18 @@ func (s *GOBRPGStore) loadUnlocked() error {
 	}
 	defer file.Close()
 
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, file); err != nil {
+		return fmt.Errorf("failed to read rpg index: %w", err)
+	}
+	return s.decodeIndexBytes(buf.Bytes())
+}
+
+// decodeIndexBytes decodes a gob-encoded RPG index payload into the graph.
+// Shared by the file-backed and postgres-backed stores.
+func (s *GOBRPGStore) decodeIndexBytes(buf []byte) error {
 	var data gobRPGData
-	if err := gob.NewDecoder(file).Decode(&data); err != nil {
+	if err := gob.NewDecoder(bytes.NewReader(buf)).Decode(&data); err != nil {
 		return fmt.Errorf("failed to decode rpg index: %w", err)
 	}
 
@@ -97,6 +109,32 @@ func (s *GOBRPGStore) loadUnlocked() error {
 	s.graph.mu.Unlock()
 
 	return nil
+}
+
+// encodeIndexBytes serializes the graph to a gob payload. Shared by the
+// file-backed and postgres-backed stores.
+func (s *GOBRPGStore) encodeIndexBytes() ([]byte, error) {
+	// Snapshot Nodes and Edges under the graph's read lock so no concurrent
+	// mutation can modify them while gob iterates the maps/slices.
+	s.graph.mu.RLock()
+	nodes := make(map[string]*Node, len(s.graph.Nodes))
+	for k, v := range s.graph.Nodes {
+		nodes[k] = v
+	}
+	edges := make([]*Edge, len(s.graph.Edges))
+	copy(edges, s.graph.Edges)
+	s.graph.mu.RUnlock()
+
+	data := gobRPGData{
+		Version: CurrentRPGIndexVersion,
+		Nodes:   nodes,
+		Edges:   edges,
+	}
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(data); err != nil {
+		return nil, fmt.Errorf("failed to encode rpg index: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 // Persist writes the graph to persistent storage.
@@ -128,21 +166,9 @@ func (s *GOBRPGStore) Persist(ctx context.Context) error {
 }
 
 func (s *GOBRPGStore) persistUnlocked() error {
-	// Snapshot Nodes and Edges under the graph's read lock so no concurrent
-	// mutation can modify them while gob iterates the maps/slices.
-	s.graph.mu.RLock()
-	nodes := make(map[string]*Node, len(s.graph.Nodes))
-	for k, v := range s.graph.Nodes {
-		nodes[k] = v
-	}
-	edges := make([]*Edge, len(s.graph.Edges))
-	copy(edges, s.graph.Edges)
-	s.graph.mu.RUnlock()
-
-	data := gobRPGData{
-		Version: CurrentRPGIndexVersion,
-		Nodes:   nodes,
-		Edges:   edges,
+	buf, err := s.encodeIndexBytes()
+	if err != nil {
+		return err
 	}
 
 	tmpFile, err := os.CreateTemp(filepath.Dir(s.indexPath), filepath.Base(s.indexPath)+".tmp-*")
@@ -158,9 +184,9 @@ func (s *GOBRPGStore) persistUnlocked() error {
 		}
 	}()
 
-	if err := gob.NewEncoder(tmpFile).Encode(data); err != nil {
+	if _, err := tmpFile.Write(buf); err != nil {
 		_ = tmpFile.Close()
-		return fmt.Errorf("failed to encode rpg index: %w", err)
+		return fmt.Errorf("failed to write rpg index temp file: %w", err)
 	}
 	if err := tmpFile.Sync(); err != nil {
 		_ = tmpFile.Close()

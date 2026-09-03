@@ -42,7 +42,20 @@ func LoadWorkspaceSymbolStores(ctx context.Context, workspaceName, projectName s
 
 	stores := make([]SymbolStore, 0, len(projects))
 	for _, p := range projects {
-		ss := NewGOBSymbolStore(config.GetSymbolIndexPath(p.Path))
+		var ss SymbolStore
+		if ws.Store.Backend == "postgres" && ws.Store.Postgres.DSN != "" {
+			// Postgres-backed workspaces keep the symbol index in the shared
+			// store too, so serving hosts don't need the project files
+			// locally (workspace mode with a remote builder).
+			pgStore, err := NewPostgresSymbolStore(ctx, ws.Store.Postgres.DSN, ws.Name, p.Name)
+			if err != nil {
+				CloseSymbolStores(stores)
+				return nil, fmt.Errorf("failed to create postgres symbol store for project %s: %w", p.Name, err)
+			}
+			ss = pgStore
+		} else {
+			ss = NewGOBSymbolStore(config.GetSymbolIndexPath(p.Path))
+		}
 		if err := ss.Load(ctx); err != nil {
 			ss.Close()
 			CloseSymbolStores(stores)
