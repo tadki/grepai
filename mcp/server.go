@@ -639,8 +639,13 @@ func (s *Server) handleWorkspaceSearch(ctx context.Context, query string, limit 
 		fullPathPrefix += singleProject + "/"
 	}
 
-	// Add path prefix if provided
-	if normalizedPath != "" {
+	// Add path prefix if provided. Only push the user path down into the
+	// database prefix when a single project was resolved — otherwise the
+	// project-name segment sits between the workspace and the user path
+	// (stored paths look like workspace/project/relative), so the pushdown
+	// prefix would match nothing. In that case search with the workspace
+	// prefix only and let the post-filter below match the relative path.
+	if normalizedPath != "" && singleProject != "" {
 		fullPathPrefix += normalizedPath
 	}
 
