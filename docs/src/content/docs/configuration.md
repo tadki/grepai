@@ -83,6 +83,7 @@ trace:
     - .py
     - .php
     - .lua
+    - .gd
     - .c
     - .h
     - .cpp

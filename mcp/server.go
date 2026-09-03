@@ -652,11 +652,8 @@ func (s *Server) handleWorkspaceSearch(ctx context.Context, query string, limit 
 	searcher := search.NewSearcher(st, emb, searchCfg)
 
 	// Construct full path prefix for database query. Database stores paths as:
-	// workspaceName/projectName/relativePath. When a single project is specified,
-	// include it in the path prefix to push filtering to database level. If no
-	// project is specified but a user path is provided, we must search using the
-	// workspace prefix and perform post-filtering to match the relative path
-	// across any project (since project name sits between workspace and user path).
+	// workspaceName/projectName/relativePath, so the prefix can include the
+	// project (and user path) only when a single project was resolved.
 	fullPathPrefix := ws.Name + "/"
 	singleProject := ""
 	if len(resolvedProjects) == 1 {
@@ -674,9 +671,15 @@ func (s *Server) handleWorkspaceSearch(ctx context.Context, query string, limit 
 		fullPathPrefix += normalizedPath
 	}
 
-	// Search
+	// Search. When the path filter can't be pushed down (no single project
+	// resolved), over-fetch before post-filtering so hits from other projects
+	// don't starve out valid matches under the requested path.
+	fetchLimit := limit
+	if singleProject == "" && normalizedPath != "" {
+		fetchLimit = limit * 4
+	}
 	var results []store.SearchResult
-	results, err = searcher.Search(ctx, query, limit, fullPathPrefix)
+	results, err = searcher.Search(ctx, query, fetchLimit, fullPathPrefix)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
 	}
@@ -696,6 +699,9 @@ func (s *Server) handleWorkspaceSearch(ctx context.Context, query string, limit 
 			}
 		}
 		results = filtered
+		if len(results) > limit {
+			results = results[:limit]
+		}
 	}
 
 	// Filter by projects if specified
@@ -807,7 +813,7 @@ func validateWorkspacePathForProjects(normalizedPath string, ws *config.Workspac
 			"no project roots available for selected projects",
 		)
 	}
-	if pathPrefixMatchesProjectRoots(normalizedPath, roots) {
+	if pathPrefixAllowedByProjectRoots(normalizedPath, roots) {
 		return ""
 	}
 
@@ -820,7 +826,13 @@ func validateWorkspacePathForProjects(normalizedPath string, ws *config.Workspac
 	)
 }
 
-func pathPrefixMatchesProjectRoots(pathPrefix string, projectRoots []string) bool {
+// pathPrefixAllowedByProjectRoots reports whether a path prefix may be used.
+// A prefix is allowed when it plausibly matches a project root's contents; a
+// root that cannot be read (project files not on this host — e.g. a server
+// querying a shared remote index) can neither confirm nor refute the prefix,
+// so it must not cause a rejection. The store-side path filter decides
+// actual relevance.
+func pathPrefixAllowedByProjectRoots(pathPrefix string, projectRoots []string) bool {
 	trimmed := strings.Trim(strings.TrimSpace(pathPrefix), "/")
 	if trimmed == "" || trimmed == "." {
 		return true
@@ -2252,7 +2264,11 @@ func (s *Server) tryLoadWorkspaceRPG(ctx context.Context, workspaceName, project
 			continue
 		}
 		cfg, err := config.Load(p.Path)
-		if err != nil || !cfg.RPG.Enabled {
+		if err != nil {
+			log.Printf("Warning: skipping RPG for project %s: failed to load config: %v", p.Name, err)
+			continue
+		}
+		if !cfg.RPG.Enabled {
 			continue
 		}
 		rpgStore := rpg.NewGOBRPGStore(config.GetRPGIndexPath(p.Path))

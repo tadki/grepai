@@ -900,3 +900,44 @@ func TestHandleTraceCalleesFromStores_should_aggregate_across_stores(t *testing.
 		t.Errorf("expected result to contain callee 'SendResponse', got: %s", text)
 	}
 }
+
+func TestPathPrefixAllowedByProjectRoots_missing_root_is_unverifiable(t *testing.T) {
+	// A server querying a shared remote index has project roots configured
+	// that do not exist on its own filesystem — the prefix can't be verified
+	// locally and must not be rejected.
+	missingRoot := filepath.Join(t.TempDir(), "not", "present")
+	if pathPrefixAllowedByProjectRoots("scenes/ui", []string{missingRoot}) {
+		return // accepted, as intended
+	}
+	t.Fatal("expected prefix to be allowed when the only project root is not locally readable")
+}
+
+func TestPathPrefixAllowedByProjectRoots_readable_root_matches(t *testing.T) {
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, "src"), 0755); err != nil {
+		t.Fatalf("failed to create src: %v", err)
+	}
+	if !pathPrefixAllowedByProjectRoots("src", []string{projectRoot}) {
+		t.Fatal("expected existing first segment to be allowed")
+	}
+}
+
+func TestPathPrefixAllowedByProjectRoots_readable_root_rejects_unknown(t *testing.T) {
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, "src"), 0755); err != nil {
+		t.Fatalf("failed to create src: %v", err)
+	}
+	if pathPrefixAllowedByProjectRoots("definitely_not_a_dir", []string{projectRoot}) {
+		t.Fatal("expected unknown first segment under a readable root to be rejected")
+	}
+}
+
+func TestPathPrefixAllowedByProjectRoots_mixed_roots_accept_on_unverifiable(t *testing.T) {
+	projectRoot := t.TempDir()
+	missingRoot := filepath.Join(t.TempDir(), "not", "present")
+	// The readable root can't match the prefix, but the unreadable one might
+	// own it — reject only when every root was checked and none matched.
+	if !pathPrefixAllowedByProjectRoots("scenes/ui", []string{projectRoot, missingRoot}) {
+		t.Fatal("expected unverifiable root to keep the prefix allowed")
+	}
+}

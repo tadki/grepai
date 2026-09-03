@@ -114,6 +114,7 @@ grepai trace callers "MyFunction" --mode precise
 | C# | `.cs` | Good |
 | F# | `.fs`, `.fsx`, `.fsi` | Good |
 | Pascal/Delphi | `.pas`, `.dpr` | Good |
+| GDScript | `.gd` | Good |
 
 ### JSON Output
 
@@ -159,6 +160,7 @@ trace:
     - .py
     - .php
     - .lua
+    - .gd
     - .java
     - .c
     - .h

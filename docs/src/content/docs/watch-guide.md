@@ -81,6 +81,7 @@ The watcher indexes files with these extensions:
 | Python | `.py` |
 | PHP | `.php` |
 | Lua | `.lua` |
+| GDScript | `.gd` |
 | Rust | `.rs` |
 | C/C++ | `.c`, `.cpp`, `.h`, `.hpp`, `.cc`, `.cxx`, `.hxx` |
 | Zig | `.zig` |
