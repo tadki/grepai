@@ -31,7 +31,7 @@ func (e *RegexExtractor) Mode() string {
 // invalidates every persisted RegexExtractor symbol cache entry on the
 // next scan, forcing fresh extraction. Use semver-ish strings ("regex-v2",
 // "regex-v2-lua-funcs") so the bump intent is visible in diffs.
-const regexExtractorVersion = "regex-v4-gdscript"
+const regexExtractorVersion = "regex-v5-gdscript"
 
 // Version returns the extractor's signature used for dedup
 // invalidation. See SymbolExtractor.Version.
@@ -784,6 +784,16 @@ func buildIgnoredMask(content string, lang string) []bool {
 			mask[i] = true
 			mask[i+1] = true
 			i++
+			state = stateLineComment
+			continue
+		}
+		// Python and GDScript use # line comments. Without this, an
+		// apostrophe inside a comment ("EffectManager's resolver", "don't")
+		// opens a phantom single-quote string that masks arbitrary amounts of
+		// real code — every call reference inside the span silently
+		// disappears from the index.
+		if (lang == "python" || lang == "gdscript") && ch == '#' {
+			mask[i] = true
 			state = stateLineComment
 			continue
 		}

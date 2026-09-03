@@ -1657,3 +1657,63 @@ func refresh_hud(node):
 		t.Errorf("expected method calls excluded from property reads, got reads %v", reads)
 	}
 }
+
+func TestRegexExtractor_CommentApostropheDoesNotSwallowCode(t *testing.T) {
+	extractor := NewRegexExtractor()
+	ctx := context.Background()
+
+	// An apostrophe inside a # comment must not open a phantom string state.
+	gdContent := `## Registers into EffectManager's shared resolver.
+func configure():
+	register_subsystem("core")
+	var data := _node_data.get("home")
+	return data.cost
+
+func activate():
+	apply_effects()
+`
+	_, gdRefs, err := extractor.ExtractAll(ctx, "autoload/sane.gd", gdContent)
+	if err != nil {
+		t.Fatalf("ExtractAll failed: %v", err)
+	}
+	gdCalls := make(map[string]bool)
+	for _, ref := range gdRefs {
+		if ref.CallerName == "configure" && ref.Kind == RefKindCall {
+			gdCalls[ref.SymbolName] = true
+		}
+	}
+	for _, name := range []string{"register_subsystem", "get"} {
+		if !gdCalls[name] {
+			t.Errorf("gdscript: missing call %s inside configure after apostrophe comment (calls: %v)", name, gdCalls)
+		}
+	}
+	activateCalls := false
+	for _, ref := range gdRefs {
+		if ref.CallerName == "activate" && ref.Kind == RefKindCall && ref.SymbolName == "apply_effects" {
+			activateCalls = true
+		}
+	}
+	_ = activateCalls
+	if !activateCalls {
+		t.Error("gdscript: missing apply_effects call inside activate")
+	}
+
+	pyContent := `# don't warn on missing resolvers
+def configure():
+    register_subsystem("core")
+    return 1
+`
+	_, pyRefs, err := extractor.ExtractAll(ctx, "svc.py", pyContent)
+	if err != nil {
+		t.Fatalf("ExtractAll failed: %v", err)
+	}
+	found := false
+	for _, ref := range pyRefs {
+		if ref.CallerName == "configure" && ref.SymbolName == "register_subsystem" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("python: missing register_subsystem call after apostrophe comment")
+	}
+}
