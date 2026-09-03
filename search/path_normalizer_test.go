@@ -177,3 +177,118 @@ func TestNormalizeWorkspacePathPrefix(t *testing.T) {
 		})
 	}
 }
+
+func TestSplitWorkspaceScopedPath(t *testing.T) {
+	ws := &config.Workspace{
+		Name: "acme",
+		Projects: []config.ProjectEntry{
+			{Name: "backend", Path: "/srv/backend"},
+			{Name: "shared", Path: "/srv/shared"},
+		},
+	}
+
+	tests := []struct {
+		name        string
+		pathPrefix  string
+		selected    []string
+		wantRel     string
+		wantProject string
+		wantOK      bool
+	}{
+		{
+			name:        "workspace/project/rest",
+			pathPrefix:  "acme/backend/src",
+			wantRel:     "src",
+			wantProject: "backend",
+			wantOK:      true,
+		},
+		{
+			name:        "trailing slash",
+			pathPrefix:  "acme/backend/src/",
+			wantRel:     "src",
+			wantProject: "backend",
+			wantOK:      true,
+		},
+		{
+			name:        "selection includes project",
+			pathPrefix:  "acme/shared/lib",
+			selected:    []string{"shared"},
+			wantRel:     "lib",
+			wantProject: "shared",
+			wantOK:      true,
+		},
+		{
+			name:       "selection excludes project",
+			pathPrefix: "acme/backend/src",
+			selected:   []string{"shared"},
+			wantOK:     false,
+		},
+		{
+			name:       "only two segments",
+			pathPrefix: "acme/backend",
+			wantOK:     false,
+		},
+		{
+			name:       "wrong workspace name",
+			pathPrefix: "other/backend/src",
+			wantOK:     false,
+		},
+		{
+			name:       "unknown project",
+			pathPrefix: "acme/unknown/src",
+			wantOK:     false,
+		},
+		{
+			name:       "plain relative path",
+			pathPrefix: "src/handlers",
+			wantOK:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rel, project, ok := splitWorkspaceScopedPath(tt.pathPrefix, ws, tt.selected)
+			if ok != tt.wantOK {
+				t.Fatalf("splitWorkspaceScopedPath() ok = %v, want %v", ok, tt.wantOK)
+			}
+			if !tt.wantOK {
+				return
+			}
+			if rel != tt.wantRel || project != tt.wantProject {
+				t.Fatalf("splitWorkspaceScopedPath() = (%q, %q), want (%q, %q)", rel, project, tt.wantRel, tt.wantProject)
+			}
+		})
+	}
+}
+
+func TestNormalizeWorkspacePathPrefix_WorkspaceScoped(t *testing.T) {
+	ws := &config.Workspace{
+		Name: "acme",
+		Projects: []config.ProjectEntry{
+			{Name: "backend", Path: "/srv/backend"},
+		},
+	}
+
+	rel, projects, err := NormalizeWorkspacePathPrefix("acme/backend/src", ws, nil)
+	if err != nil {
+		t.Fatalf("NormalizeWorkspacePathPrefix() error = %v", err)
+	}
+	if rel != "src" {
+		t.Fatalf("rel = %q, want %q", rel, "src")
+	}
+	if len(projects) != 1 || projects[0] != "backend" {
+		t.Fatalf("projects = %v, want [backend]", projects)
+	}
+
+	// A prefix that is not workspace-scoped passes through unchanged.
+	rel, projects, err = NormalizeWorkspacePathPrefix("src/api", ws, nil)
+	if err != nil {
+		t.Fatalf("NormalizeWorkspacePathPrefix() error = %v", err)
+	}
+	if rel != "src/api" {
+		t.Fatalf("rel = %q, want %q", rel, "src/api")
+	}
+	if len(projects) != 0 {
+		t.Fatalf("projects = %v, want unchanged empty selection", projects)
+	}
+}

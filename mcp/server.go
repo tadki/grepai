@@ -2219,6 +2219,7 @@ func (s *Server) tryLoadRPGForScope(ctx context.Context, workspaceName, projectN
 // has RPG enabled and a non-empty index. Mirrors LoadWorkspaceSymbolStores,
 // which serves the same role for trace/refs queries.
 func (s *Server) tryLoadWorkspaceRPG(ctx context.Context, workspaceName, projectName string) (rpg.RPGStore, *rpg.QueryEngine, error) {
+	outdated := false
 	wsCfg, err := config.LoadWorkspaceConfig()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load workspace config: %w", err)
@@ -2247,20 +2248,33 @@ func (s *Server) tryLoadWorkspaceRPG(ctx context.Context, workspaceName, project
 	}
 
 	for _, p := range projects {
+		if p.Path == "" {
+			continue
+		}
 		cfg, err := config.Load(p.Path)
 		if err != nil || !cfg.RPG.Enabled {
 			continue
 		}
 		rpgStore := rpg.NewGOBRPGStore(config.GetRPGIndexPath(p.Path))
 		if err := rpgStore.Load(ctx); err != nil {
+			// Deliberately no Close(): GOBRPGStore.Close persists the
+			// in-memory graph, so closing after a failed load would write an
+			// empty graph over the on-disk index.
+			if errors.Is(err, rpg.ErrRPGIndexOutdated) {
+				// Remember it: if no project ends up loadable, the outdated
+				// hint is more actionable than "not enabled".
+				outdated = true
+			}
 			continue
 		}
 		graph := rpgStore.GetGraph()
 		if graph.Stats().TotalNodes == 0 {
-			rpgStore.Close()
 			continue
 		}
 		return rpgStore, rpg.NewQueryEngine(graph), nil
+	}
+	if outdated {
+		return nil, nil, rpg.ErrRPGIndexOutdated
 	}
 	return nil, nil, nil
 }

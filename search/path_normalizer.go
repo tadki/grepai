@@ -33,6 +33,33 @@ func NormalizeProjectPathPrefix(pathPrefix, projectRoot string) (string, error) 
 	return rel, nil
 }
 
+// splitWorkspaceScopedPath recognizes indexed-path prefixes of the form
+// workspace/project/rest — what a caller gets by copying the file path from a
+// search result — and rewrites them to the project-relative form, narrowing
+// the project selection. ok is false when the prefix is not workspace-scoped
+// or scopes to a project outside selectedProjects.
+func splitWorkspaceScopedPath(pathPrefix string, ws *config.Workspace, selectedProjects []string) (string, string, bool) {
+	segs := strings.Split(strings.Trim(pathPrefix, "/"), "/")
+	if len(segs) < 3 || segs[0] != ws.Name {
+		return "", "", false
+	}
+	for _, p := range ws.Projects {
+		if p.Name != segs[1] {
+			continue
+		}
+		if len(selectedProjects) == 0 {
+			return strings.Join(segs[2:], "/"), p.Name, true
+		}
+		for _, sp := range selectedProjects {
+			if strings.TrimSpace(sp) == p.Name {
+				return strings.Join(segs[2:], "/"), p.Name, true
+			}
+		}
+		return "", "", false
+	}
+	return "", "", false
+}
+
 // NormalizeWorkspacePathPrefix normalizes a search path prefix for workspace mode.
 // Absolute paths are resolved to a workspace project and converted to project-relative paths.
 // The returned project list may be narrowed to a single matched project for better push-down.
@@ -41,6 +68,14 @@ func NormalizeWorkspacePathPrefix(pathPrefix string, ws *config.Workspace, selec
 		return "", selectedProjects, nil
 	}
 	if !filepath.IsAbs(pathPrefix) {
+		// A path copied from an indexed result looks like workspace/project/rest.
+		// Rewrite it to the project-relative form so it filters like any other
+		// relative path, narrowing to that project.
+		if ws != nil {
+			if rel, projectName, ok := splitWorkspaceScopedPath(pathPrefix, ws, selectedProjects); ok {
+				return rel, []string{projectName}, nil
+			}
+		}
 		return filepath.ToSlash(pathPrefix), selectedProjects, nil
 	}
 	if ws == nil {
