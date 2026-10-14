@@ -413,7 +413,12 @@ DO $$
 DECLARE
 	current_length int;
 BEGIN
-	SELECT atttypmod - 4
+	-- pgvector stores the dimension directly in atttypmod (a 768-dim column
+	-- reads back 768, verified live against the shared store); the historical
+	-- "- 4" was wrong and made every store open run a redundant same-shape
+	-- ALTER, and would silently re-dimension an empty column to the config
+	-- dim.
+	SELECT atttypmod
 	INTO current_length
 	FROM pg_attribute
 	WHERE attrelid = 'chunks'::regclass

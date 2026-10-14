@@ -31,6 +31,10 @@ func TestBuildEnsureVectorSQL_ContainsExpectedFragments(t *testing.T) {
 				"FROM pg_attribute",
 				"attrelid = 'chunks'::regclass",
 				"attname = 'vector'",
+				// pgvector keeps the dimension in atttypmod directly; the SQL
+				// must read it verbatim (no "- 4" arithmetic) so an existing
+				// matching column takes the skip branch.
+				"SELECT atttypmod\n\tINTO current_length",
 				"IS DISTINCT FROM",
 				"ALTER TABLE chunks ALTER COLUMN vector TYPE vector(",
 			}
@@ -39,6 +43,10 @@ func TestBuildEnsureVectorSQL_ContainsExpectedFragments(t *testing.T) {
 				if !strings.Contains(sql, frag) {
 					t.Fatalf("expected SQL to contain %q, got: %q", frag, sql)
 				}
+			}
+
+			if strings.Contains(sql, "atttypmod - 4") {
+				t.Fatalf("SQL must not apply the historical -4 typmod offset: %q", sql)
 			}
 
 			if !strings.Contains(sql, "vector("+strconvItoa(tt.dim)+")") {
