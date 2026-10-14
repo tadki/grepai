@@ -199,7 +199,6 @@ def register(registry: Registry) -> None:
             if not ts or not _recent_iso(ts, timedelta(days=1)):
                 _fail(f"stale node {r['node'].get('id')!r}",
                       detail=f"updated_at={ts}")
-                return
 
     @registry.step("the fetched node id equals the query id")
     def _then_fetched_id(_ctx: dict) -> None:

@@ -13,7 +13,7 @@ import (
 )
 
 // seedRPGProjectForMCP creates a project with an RPG-enabled config and a
-// seeded gob graph, mirroring the cli/rpg_test.go fixture.
+// seeded gob graph, mirroring the rpg package's seedRPGProject test fixture.
 func seedRPGProjectForMCP(t *testing.T, base, name, symbolName string) string {
 	t.Helper()
 	root := filepath.Join(base, name)
@@ -67,10 +67,9 @@ func TestTryLoadWorkspaceRPG_should_map_empty_sentinel_to_nil(t *testing.T) {
 		t.Fatalf("empty workspace must map to nil enrichment, got st=%v err=%v", st, err)
 	}
 	// Unknown project fails clean inside the MCP layer too.
-	errGhost := new(error)
-	_, _, *errGhost = s.tryLoadWorkspaceRPG(context.Background(), "ws", "ghost")
-	if *errGhost == nil || !strings.Contains((*errGhost).Error(), "not found") {
-		t.Fatalf("ghost project must fail clean, got %v", *errGhost)
+	_, _, errGhost := s.tryLoadWorkspaceRPG(context.Background(), "ws", "ghost")
+	if errGhost == nil || !strings.Contains(errGhost.Error(), "not found") {
+		t.Fatalf("ghost project must fail clean, got %v", errGhost)
 	}
 }
 

@@ -1,6 +1,5 @@
 Feature: SEE-1411 §SPEC-001/002 — rpg CLI 的 workspace RPG 通路与 cwd 自动归属
 
-  
   Scenario: §SPEC-001 显式 workspace 搜索命中 godot-qa-toolkit 的 gherkin 节点
     Given a built grepai binary
     When rpg search runs with query "gherkin" and --workspace gqt --json

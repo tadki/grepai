@@ -105,9 +105,9 @@ func LoadWorkspaceRPG(ctx context.Context, workspaceName, projectName string) (R
 			store = NewReadOnlyGOBRPGStore(config.GetRPGIndexPath(p.Path))
 		}
 		if err := store.Load(ctx); err != nil {
-			// PostgresRPGStore.Close only tears down its pool, but keep the
-			// explicit release for symmetry; the gob store's Close persists,
-			// so it is intentionally NOT closed after a failed load.
+			// Only the postgres store holds resources that need an explicit
+			// release (its pool); the gob stores in this path are read-only,
+			// whose Close is a no-op.
 			if closer, ok := store.(*PostgresRPGStore); ok {
 				closer.Close()
 			}

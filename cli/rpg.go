@@ -63,9 +63,7 @@ func init() {
 		cmd.Flags().BoolVar(&rpgJSON, "json", false, "Output results in JSON format")
 		cmd.Flags().BoolVarP(&rpgTOON, "toon", "t", false, "Output results in TOON format (token-efficient for AI agents)")
 		cmd.MarkFlagsMutuallyExclusive("json", "toon")
-		// Flag shape mirrors trace/search cross-project flags so agents can
-		// use one convention across commands.
-		cmd.Flags().StringVar(&rpgWorkspace, "workspace", "", "Workspace name to query the RPG index for (reads the shared postgres store when configured)")
+		cmd.Flags().StringVar(&rpgWorkspace, "workspace", "", "Workspace name for cross-project rpg")
 		cmd.Flags().StringVar(&rpgProject, "project", "", "Project name within workspace (requires --workspace)")
 	}
 
