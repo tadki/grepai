@@ -204,6 +204,11 @@ func TestRPGCompletion_should_suggest_workspaces_and_projects(t *testing.T) {
 	os.Setenv("HOME", tmpDir)
 	defer os.Setenv("HOME", oldHome)
 
+	// Flag parsing during __complete binds the package-level rpg globals;
+	// restore them so later tests don't inherit a phantom --workspace.
+	oldWS, oldProj := rpgWorkspace, rpgProject
+	defer func() { rpgWorkspace = oldWS; rpgProject = oldProj }()
+
 	wsCfg := &config.WorkspaceConfig{
 		Version: 1,
 		Workspaces: map[string]config.Workspace{
@@ -243,6 +248,19 @@ func TestRPGCompletion_should_suggest_workspaces_and_projects(t *testing.T) {
 			if !strings.Contains(output, project) {
 				t.Fatalf("rpg %s --project completion missing %q, got: %s", cmd, project, output)
 			}
+		}
+
+		// --project without a workspace must suggest nothing (the flag
+		// requires a workspace; offering project names here would lie).
+		// Pass --workspace "" explicitly: cobra persists flag values across
+		// Execute calls in-process, and the previous iteration set test-ws.
+		buf.Reset()
+		rootCmd.SetArgs([]string{"__complete", "rpg", cmd, "--workspace", "", "--project", ""})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("__complete rpg %s --project without workspace failed: %v", cmd, err)
+		}
+		if strings.Contains(buf.String(), "frontend") || strings.Contains(buf.String(), "backend") {
+			t.Fatalf("rpg %s --project must suggest nothing without --workspace, got: %s", cmd, buf.String())
 		}
 	}
 	rootCmd.SetOut(nil)

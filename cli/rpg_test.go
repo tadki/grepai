@@ -111,13 +111,19 @@ func TestRunRPGSearch_json_should_return_matching_nodes(t *testing.T) {
 	oldScope := rpgSearchScope
 	oldKinds := rpgSearchKinds
 	oldLimit := rpgSearchLimit
+	// Scope flags bind package globals; reset them so a leaked --workspace
+	// from an earlier test can't redirect this test into workspace mode.
+	oldWS, oldProj := rpgWorkspace, rpgProject
 	defer func() {
 		rpgJSON = oldJSON
 		rpgTOON = oldTOON
 		rpgSearchScope = oldScope
 		rpgSearchKinds = oldKinds
 		rpgSearchLimit = oldLimit
+		rpgWorkspace = oldWS
+		rpgProject = oldProj
 	}()
+	rpgWorkspace, rpgProject = "", ""
 
 	rpgJSON = true
 	rpgTOON = false
@@ -158,9 +164,16 @@ func TestRunRPGFetch_json_should_return_node_context(t *testing.T) {
 
 	oldJSON := rpgJSON
 	oldTOON := rpgTOON
-	defer func() { rpgJSON = oldJSON; rpgTOON = oldTOON }()
+	oldWS, oldProj := rpgWorkspace, rpgProject
+	defer func() {
+		rpgJSON = oldJSON
+		rpgTOON = oldTOON
+		rpgWorkspace = oldWS
+		rpgProject = oldProj
+	}()
 	rpgJSON = true
 	rpgTOON = false
+	rpgWorkspace, rpgProject = "", ""
 
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
@@ -199,6 +212,7 @@ func TestRunRPGExplore_json_should_return_neighborhood(t *testing.T) {
 	oldDepth := rpgExploreDepth
 	oldEdgeTypes := rpgExploreEdgeTypes
 	oldLimit := rpgExploreLimit
+	oldWS, oldProj := rpgWorkspace, rpgProject
 	defer func() {
 		rpgJSON = oldJSON
 		rpgTOON = oldTOON
@@ -206,6 +220,8 @@ func TestRunRPGExplore_json_should_return_neighborhood(t *testing.T) {
 		rpgExploreDepth = oldDepth
 		rpgExploreEdgeTypes = oldEdgeTypes
 		rpgExploreLimit = oldLimit
+		rpgWorkspace = oldWS
+		rpgProject = oldProj
 	}()
 
 	rpgJSON = true
@@ -213,6 +229,7 @@ func TestRunRPGExplore_json_should_return_neighborhood(t *testing.T) {
 	rpgExploreDirection = "forward"
 	rpgExploreDepth = 1
 	rpgExploreEdgeTypes = "invokes"
+	rpgWorkspace, rpgProject = "", ""
 	rpgExploreLimit = 10
 
 	oldStdout := os.Stdout
