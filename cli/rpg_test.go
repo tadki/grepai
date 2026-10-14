@@ -3,8 +3,10 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/gob"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -109,13 +111,19 @@ func TestRunRPGSearch_json_should_return_matching_nodes(t *testing.T) {
 	oldScope := rpgSearchScope
 	oldKinds := rpgSearchKinds
 	oldLimit := rpgSearchLimit
+	// Scope flags bind package globals; reset them so a leaked --workspace
+	// from an earlier test can't redirect this test into workspace mode.
+	oldWS, oldProj := rpgWorkspace, rpgProject
 	defer func() {
 		rpgJSON = oldJSON
 		rpgTOON = oldTOON
 		rpgSearchScope = oldScope
 		rpgSearchKinds = oldKinds
 		rpgSearchLimit = oldLimit
+		rpgWorkspace = oldWS
+		rpgProject = oldProj
 	}()
+	rpgWorkspace, rpgProject = "", ""
 
 	rpgJSON = true
 	rpgTOON = false
@@ -156,9 +164,16 @@ func TestRunRPGFetch_json_should_return_node_context(t *testing.T) {
 
 	oldJSON := rpgJSON
 	oldTOON := rpgTOON
-	defer func() { rpgJSON = oldJSON; rpgTOON = oldTOON }()
+	oldWS, oldProj := rpgWorkspace, rpgProject
+	defer func() {
+		rpgJSON = oldJSON
+		rpgTOON = oldTOON
+		rpgWorkspace = oldWS
+		rpgProject = oldProj
+	}()
 	rpgJSON = true
 	rpgTOON = false
+	rpgWorkspace, rpgProject = "", ""
 
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
@@ -197,6 +212,7 @@ func TestRunRPGExplore_json_should_return_neighborhood(t *testing.T) {
 	oldDepth := rpgExploreDepth
 	oldEdgeTypes := rpgExploreEdgeTypes
 	oldLimit := rpgExploreLimit
+	oldWS, oldProj := rpgWorkspace, rpgProject
 	defer func() {
 		rpgJSON = oldJSON
 		rpgTOON = oldTOON
@@ -204,6 +220,8 @@ func TestRunRPGExplore_json_should_return_neighborhood(t *testing.T) {
 		rpgExploreDepth = oldDepth
 		rpgExploreEdgeTypes = oldEdgeTypes
 		rpgExploreLimit = oldLimit
+		rpgWorkspace = oldWS
+		rpgProject = oldProj
 	}()
 
 	rpgJSON = true
@@ -211,6 +229,7 @@ func TestRunRPGExplore_json_should_return_neighborhood(t *testing.T) {
 	rpgExploreDirection = "forward"
 	rpgExploreDepth = 1
 	rpgExploreEdgeTypes = "invokes"
+	rpgWorkspace, rpgProject = "", ""
 	rpgExploreLimit = 10
 
 	oldStdout := os.Stdout
@@ -269,7 +288,7 @@ func TestRunRPGExplore_should_reject_invalid_edge_type(t *testing.T) {
 	}
 }
 
-func TestLoadLocalRPG_should_report_disabled_or_empty_index(t *testing.T) {
+func TestLoadRPGStore_should_report_disabled_or_empty_index(t *testing.T) {
 	projectRoot := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.RPG.Enabled = false
@@ -278,11 +297,74 @@ func TestLoadLocalRPG_should_report_disabled_or_empty_index(t *testing.T) {
 	}
 	withWorkingDir(t, projectRoot)
 
-	store, qe, err := loadLocalRPG(context.Background())
+	oldWS, oldProj := rpgWorkspace, rpgProject
+	defer func() { rpgWorkspace = oldWS; rpgProject = oldProj }()
+	rpgWorkspace, rpgProject = "", ""
+
+	store, qe, err := loadRPGStore(context.Background())
 	if store != nil || qe != nil {
 		t.Fatalf("expected nil store and query engine when RPG disabled")
 	}
 	if err == nil || !strings.Contains(err.Error(), "RPG is not enabled or index is empty") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateRPGWorkspaceFlags_should_require_workspace_for_project(t *testing.T) {
+	oldWS, oldProj := rpgWorkspace, rpgProject
+	defer func() { rpgWorkspace = oldWS; rpgProject = oldProj }()
+
+	rpgWorkspace, rpgProject = "", "kol"
+	if err := validateRPGWorkspaceFlags(); err == nil || !strings.Contains(err.Error(), "--project requires --workspace") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rpgWorkspace, rpgProject = "kol", "king-of-likes"
+	if err := validateRPGWorkspaceFlags(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// staleRPGIndexPayload mirrors mcp.staleGobPayload: gob decodes by field
+// name, so this locally declared struct crafts a stale index without the rpg
+// package's unexported gobRPGData.
+type staleRPGIndexPayload struct {
+	Version int
+	Nodes   map[string]*rpg.Node
+	Edges   []*rpg.Edge
+}
+
+func TestLoadRPGStore_should_map_outdated_index_to_rebuild_hint(t *testing.T) {
+	projectRoot := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.RPG.Enabled = true
+	if err := cfg.Save(projectRoot); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(staleRPGIndexPayload{
+		Version: -1,
+		Nodes:   map[string]*rpg.Node{"x:1": {ID: "x:1"}},
+	}); err != nil {
+		t.Fatalf("failed to encode stale payload: %v", err)
+	}
+	indexPath := config.GetRPGIndexPath(projectRoot)
+	if err := os.MkdirAll(filepath.Dir(indexPath), 0o755); err != nil {
+		t.Fatalf("failed to mkdir .grepai: %v", err)
+	}
+	if err := os.WriteFile(indexPath, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("failed to write stale index: %v", err)
+	}
+	withWorkingDir(t, projectRoot)
+
+	oldWS, oldProj := rpgWorkspace, rpgProject
+	defer func() { rpgWorkspace = oldWS; rpgProject = oldProj }()
+	rpgWorkspace, rpgProject = "", ""
+
+	_, _, err := loadRPGStore(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "grepai watch") || !strings.Contains(err.Error(), "outdated") {
+		t.Fatalf("outdated index must map to the rebuild hint, got %v", err)
+	}
+	if strings.Contains(err.Error(), "RPG is not enabled") {
+		t.Fatalf("outdated must not collapse into the empty-index message: %v", err)
 	}
 }

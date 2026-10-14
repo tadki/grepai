@@ -37,8 +37,25 @@ Useful flags:
 | `--scope` | Limit results to a feature path such as `cli` or `rpg/query` |
 | `--kinds` | Comma-separated node kinds: `area`, `category`, `subcategory`, `file`, `symbol`, `chunk` |
 | `--limit`, `-n` | Maximum number of results |
+| `--workspace` | Query a workspace's RPG index explicitly (see below) |
+| `--project` | Pick a project inside `--workspace` |
 | `--json` | Structured JSON output |
 | `--toon`, `-t` | Token-efficient structured output |
+
+## Workspace RPG Indexes
+
+In workspace mode the watch daemon keeps each project's RPG graph in the shared store (postgres), not in the project's local `.grepai/` directory. The `rpg` commands resolve where to read the graph the same way `search`/`trace`/`refs` do:
+
+- With `--workspace <name>` (and optionally `--project <name>`), the CLI queries that workspace's shared RPG index explicitly. Invalid workspace or project names fail with a clear error.
+- Without flags, the current directory decides: if the project belongs to a postgres-backed workspace, the shared store is read (falling back to the local index with a warning when postgres is unreachable); otherwise the project's local gob index is used as before.
+
+```bash
+grepai rpg search "scenario runner" --workspace gqt --project godot-qa-toolkit
+grepai rpg fetch "sym:cli/search.go:runSearch" --workspace gqt
+grepai rpg explore "sym:cli/search.go:runSearch" --workspace gqt --direction forward
+```
+
+On a multi-project workspace queried without `--project`, the first project with a non-empty RPG index is served and the choice is logged. Read-only queries never write: they neither create nor refresh any `.grepai/*.gob` files.
 
 ## Fetch Node Context
 

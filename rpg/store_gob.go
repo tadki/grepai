@@ -19,6 +19,7 @@ type GOBRPGStore struct {
 	indexPath string
 	lockPath  string
 	graph     *Graph
+	readOnly  bool
 	mu        sync.RWMutex
 }
 
@@ -37,8 +38,28 @@ func NewGOBRPGStore(indexPath string) *GOBRPGStore {
 	}
 }
 
-// Load reads the graph from persistent storage.
+// NewReadOnlyGOBRPGStore creates a GOB-based RPG store for read-only query
+// paths. Its Close/Persist never write: closing after a read must not
+// persist the loaded snapshot back to disk (that would both overwrite a
+// concurrently refreshed index and leave stray/empty gob shells behind).
+func NewReadOnlyGOBRPGStore(indexPath string) *GOBRPGStore {
+	return &GOBRPGStore{
+		indexPath: indexPath,
+		lockPath:  indexPath + ".lock",
+		graph:     NewGraph(),
+		readOnly:  true,
+	}
+}
+
+// Load reads the graph from persistent storage. A read-only store skips the
+// lock file entirely when no index exists yet so a first-time query in a
+// project never creates files under .grepai/.
 func (s *GOBRPGStore) Load(ctx context.Context) error {
+	if s.readOnly {
+		if _, err := os.Stat(s.indexPath); os.IsNotExist(err) {
+			return nil
+		}
+	}
 	lockFile, err := os.OpenFile(s.lockPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Printf("rpg: flock open failed, proceeding without lock: %v", err)
@@ -137,8 +158,12 @@ func (s *GOBRPGStore) encodeIndexBytes() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Persist writes the graph to persistent storage.
+// Persist writes the graph to persistent storage. A read-only store never
+// writes (returns nil) — see NewReadOnlyGOBRPGStore.
 func (s *GOBRPGStore) Persist(ctx context.Context) error {
+	if s.readOnly {
+		return nil
+	}
 	if err := fileutil.EnsureParentDir(s.indexPath); err != nil {
 		return fmt.Errorf("failed to prepare rpg index directory: %w", err)
 	}

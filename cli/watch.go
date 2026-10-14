@@ -2905,6 +2905,12 @@ func initializeWorkspaceRuntime(ctx context.Context, ws *config.Workspace, proje
 		})
 		if err := rpgEncoder.BuildFull(ctx, symbolStore, vectorStore, nil); err != nil {
 			log.Printf("Warning: failed to build RPG graph for %s: %v", project.Path, err)
+		} else {
+			// Align with the single-project path's success line so operators
+			// can confirm the workspace graph is populated, not silently
+			// empty.
+			buildStats := rpgEncoder.Stats()
+			log.Printf("RPG graph built for workspace:%s/%s: %d nodes, %d edges", ws.Name, project.Name, buildStats.TotalNodes, buildStats.TotalEdges)
 		}
 		if err := rpgStore.Persist(ctx); err != nil {
 			log.Printf("Warning: failed to persist RPG graph for %s: %v", project.Path, err)

@@ -145,7 +145,7 @@ func registerCompletions() {
 	_ = searchCmd.RegisterFlagCompletionFunc("workspace", workspaceCompleter)
 	_ = watchCmd.RegisterFlagCompletionFunc("workspace", workspaceCompleter)
 	_ = mcpServeCmd.RegisterFlagCompletionFunc("workspace", workspaceCompleter)
-	for _, cmd := range []*cobra.Command{traceCallersCmd, traceCalleesCmd, traceGraphCmd, refsReadersCmd, refsWritersCmd, refsGraphCmd} {
+	for _, cmd := range []*cobra.Command{traceCallersCmd, traceCalleesCmd, traceGraphCmd, refsReadersCmd, refsWritersCmd, refsGraphCmd, rpgSearchCmd, rpgFetchCmd, rpgExploreCmd} {
 		_ = cmd.RegisterFlagCompletionFunc("workspace", workspaceCompleter)
 	}
 
@@ -157,7 +157,7 @@ func registerCompletions() {
 		return completeProjectNames(wsName), cobra.ShellCompDirectiveNoFileComp
 	}
 	_ = searchCmd.RegisterFlagCompletionFunc("project", projectCompleter)
-	for _, cmd := range []*cobra.Command{refsReadersCmd, refsWritersCmd, refsGraphCmd} {
+	for _, cmd := range []*cobra.Command{refsReadersCmd, refsWritersCmd, refsGraphCmd, rpgSearchCmd, rpgFetchCmd, rpgExploreCmd} {
 		_ = cmd.RegisterFlagCompletionFunc("project", projectCompleter)
 	}
 
