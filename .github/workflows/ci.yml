@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # feat/gdscript-support hosts the fork's maintained branch; PRs targeting
+    # it must run the same gate as PRs to main.
+    branches: [main, feat/gdscript-support]
 
 permissions:
   contents: read

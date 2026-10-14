@@ -50,3 +50,9 @@ docs/plans/
 # Example files
 OPENROUTER.md
 openrouter-example.sh
+
+# Gherkin steps build cache
+tests/.cache/
+
+# Python cache
+__pycache__/

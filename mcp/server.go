@@ -2295,10 +2295,12 @@ func (s *Server) tryLoadRPG(ctx context.Context) (rpg.RPGStore, *rpg.QueryEngine
 }
 
 // tryLoadRPGForScope attempts to load the RPG store for a query scope. With a
-// workspace, the project entries from the workspace config are consulted —
-// RPG is configured per project — and the first project with RPG enabled and
-// a non-empty index wins. Without a workspace, the server's own project root
-// is used (single-project mode).
+// workspace, the shared rpg.LoadWorkspaceRPG loader resolves the project
+// entries from the workspace config — RPG is configured per project — and the
+// first project with RPG enabled and a non-empty index wins. Without a
+// workspace, the server's own project root is used (single-project mode).
+// Both paths go through the shared loaders in rpg/scope.go so the CLI and the
+// MCP server read through one code path.
 func (s *Server) tryLoadRPGForScope(ctx context.Context, workspaceName, projectName string) (rpg.RPGStore, *rpg.QueryEngine, error) {
 	if workspaceName != "" {
 		return s.tryLoadWorkspaceRPG(ctx, workspaceName, projectName)
@@ -2306,115 +2308,22 @@ func (s *Server) tryLoadRPGForScope(ctx context.Context, workspaceName, projectN
 	if s.projectRoot == "" {
 		return nil, nil, nil
 	}
-	cfg, err := config.Load(s.projectRoot)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load config: %w", err)
-	}
-	if !cfg.RPG.Enabled {
+	store, qe, err := rpg.LoadLocalRPGForRoot(ctx, s.projectRoot)
+	if errors.Is(err, rpg.ErrRPGIndexEmpty) {
 		return nil, nil, nil
 	}
-	rpgStore := rpg.NewGOBRPGStore(config.GetRPGIndexPath(s.projectRoot))
-	if err := rpgStore.Load(ctx); err != nil {
-		if errors.Is(err, rpg.ErrRPGIndexOutdated) {
-			return nil, nil, rpg.ErrRPGIndexOutdated
-		}
-		return nil, nil, fmt.Errorf("failed to load RPG store: %w", err)
-	}
-	graph := rpgStore.GetGraph()
-	if graph.Stats().TotalNodes == 0 {
-		rpgStore.Close()
-		return nil, nil, nil
-	}
-	qe := rpg.NewQueryEngine(graph)
-	return rpgStore, qe, nil
+	return store, qe, err
 }
 
-// tryLoadWorkspaceRPG loads the RPG store of the first workspace project that
-// has RPG enabled and a non-empty index. Mirrors LoadWorkspaceSymbolStores,
-// which serves the same role for trace/refs queries.
+// tryLoadWorkspaceRPG maps the shared loader's sentinels to the MCP-facing
+// contract: a disabled/empty workspace yields no enrichment (nil), not an
+// error.
 func (s *Server) tryLoadWorkspaceRPG(ctx context.Context, workspaceName, projectName string) (rpg.RPGStore, *rpg.QueryEngine, error) {
-	outdated := false
-	wsCfg, err := config.LoadWorkspaceConfig()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load workspace config: %w", err)
-	}
-	if wsCfg == nil {
+	store, qe, err := rpg.LoadWorkspaceRPG(ctx, workspaceName, projectName)
+	if err != nil && errors.Is(err, rpg.ErrRPGIndexEmpty) {
 		return nil, nil, nil
 	}
-	ws, err := wsCfg.GetWorkspace(workspaceName)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	projects := ws.Projects
-	if projectName != "" {
-		found := false
-		for _, p := range ws.Projects {
-			if p.Name == projectName {
-				projects = []config.ProjectEntry{p}
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, nil, fmt.Errorf("project %q not found in workspace %q", projectName, workspaceName)
-		}
-	}
-
-	usePostgres := ws.Store.Backend == "postgres" && ws.Store.Postgres.DSN != ""
-	for _, p := range projects {
-		if p.Path == "" {
-			continue
-		}
-		if usePostgres {
-			// The builder host owns the project config; when it is not
-			// present locally, a non-empty shared RPG row is the enablement
-			// signal.
-		} else {
-			cfg, err := config.Load(p.Path)
-			if err != nil {
-				log.Printf("Warning: skipping RPG for project %s: failed to load config: %v", p.Name, err)
-				continue
-			}
-			if !cfg.RPG.Enabled {
-				continue
-			}
-		}
-		var rpgStore rpg.RPGStore
-		if usePostgres {
-			// Postgres-backed workspaces keep the RPG graph in the shared
-			// store too, so serving hosts don't need the project files
-			// locally.
-			pgStore, pgErr := rpg.NewPostgresRPGStore(ctx, ws.Store.Postgres.DSN, ws.Name, p.Name)
-			if pgErr != nil {
-				log.Printf("Warning: skipping RPG for project %s: failed to create postgres store: %v", p.Name, pgErr)
-				continue
-			}
-			rpgStore = pgStore
-		} else {
-			rpgStore = rpg.NewGOBRPGStore(config.GetRPGIndexPath(p.Path))
-		}
-		if err := rpgStore.Load(ctx); err != nil {
-			// Deliberately no Close(): GOBRPGStore.Close persists the
-			// in-memory graph, so closing after a failed load would write an
-			// empty graph over the on-disk index.
-			if errors.Is(err, rpg.ErrRPGIndexOutdated) {
-				// Remember it: if no project ends up loadable, the outdated
-				// hint is more actionable than "not enabled".
-				outdated = true
-			}
-			continue
-		}
-		graph := rpgStore.GetGraph()
-		if graph.Stats().TotalNodes == 0 {
-			continue
-		}
-		return rpgStore, rpg.NewQueryEngine(graph), nil
-	}
-	if outdated {
-		return nil, nil, rpg.ErrRPGIndexOutdated
-	}
-	return nil, nil, nil
+	return store, qe, err
 }
 
 // handleRPGSearch handles the grepai_rpg_search tool call.

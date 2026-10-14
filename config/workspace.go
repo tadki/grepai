@@ -126,6 +126,35 @@ func (c *WorkspaceConfig) GetWorkspace(name string) (*Workspace, error) {
 	return &ws, nil
 }
 
+// FindOwningWorkspace resolves which configured workspace contains the
+// project directory at projectPath (path-cleaned comparison). Returns
+// ok=false when no workspace lists that path. The nil config is treated as
+// "no workspaces configured".
+func (c *WorkspaceConfig) FindOwningWorkspace(projectPath string) (*Workspace, *ProjectEntry, bool) {
+	if c == nil || c.Workspaces == nil {
+		return nil, nil, false
+	}
+	want, err := filepath.Abs(projectPath)
+	if err != nil {
+		return nil, nil, false
+	}
+	want = filepath.Clean(want)
+	for name := range c.Workspaces {
+		ws := c.Workspaces[name]
+		for i := range ws.Projects {
+			p := ws.Projects[i]
+			pPath, err := filepath.Abs(p.Path)
+			if err != nil {
+				continue
+			}
+			if filepath.Clean(pPath) == want {
+				return &ws, &ws.Projects[i], true
+			}
+		}
+	}
+	return nil, nil, false
+}
+
 // AddWorkspace adds a new workspace to the configuration.
 func (c *WorkspaceConfig) AddWorkspace(ws Workspace) error {
 	if c.Workspaces == nil {

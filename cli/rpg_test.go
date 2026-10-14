@@ -269,7 +269,7 @@ func TestRunRPGExplore_should_reject_invalid_edge_type(t *testing.T) {
 	}
 }
 
-func TestLoadLocalRPG_should_report_disabled_or_empty_index(t *testing.T) {
+func TestLoadRPGStore_should_report_disabled_or_empty_index(t *testing.T) {
 	projectRoot := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.RPG.Enabled = false
@@ -278,11 +278,29 @@ func TestLoadLocalRPG_should_report_disabled_or_empty_index(t *testing.T) {
 	}
 	withWorkingDir(t, projectRoot)
 
-	store, qe, err := loadLocalRPG(context.Background())
+	oldWS, oldProj := rpgWorkspace, rpgProject
+	defer func() { rpgWorkspace = oldWS; rpgProject = oldProj }()
+	rpgWorkspace, rpgProject = "", ""
+
+	store, qe, err := loadRPGStore(context.Background())
 	if store != nil || qe != nil {
 		t.Fatalf("expected nil store and query engine when RPG disabled")
 	}
 	if err == nil || !strings.Contains(err.Error(), "RPG is not enabled or index is empty") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateRPGWorkspaceFlags_should_require_workspace_for_project(t *testing.T) {
+	oldWS, oldProj := rpgWorkspace, rpgProject
+	defer func() { rpgWorkspace = oldWS; rpgProject = oldProj }()
+
+	rpgWorkspace, rpgProject = "", "kol"
+	if err := validateRPGWorkspaceFlags(); err == nil || !strings.Contains(err.Error(), "--project requires --workspace") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rpgWorkspace, rpgProject = "kol", "king-of-likes"
+	if err := validateRPGWorkspaceFlags(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

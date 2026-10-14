@@ -11,7 +11,6 @@ import (
 
 	"github.com/alpkeskin/gotoon"
 	"github.com/spf13/cobra"
-	"github.com/yoanbernabeu/grepai/config"
 	"github.com/yoanbernabeu/grepai/rpg"
 )
 
@@ -25,6 +24,8 @@ var (
 	rpgExploreDepth     int
 	rpgExploreEdgeTypes string
 	rpgExploreLimit     int
+	rpgWorkspace        string
+	rpgProject          string
 )
 
 var rpgCmd = &cobra.Command{
@@ -62,6 +63,10 @@ func init() {
 		cmd.Flags().BoolVar(&rpgJSON, "json", false, "Output results in JSON format")
 		cmd.Flags().BoolVarP(&rpgTOON, "toon", "t", false, "Output results in TOON format (token-efficient for AI agents)")
 		cmd.MarkFlagsMutuallyExclusive("json", "toon")
+		// Flag shape mirrors trace/search cross-project flags so agents can
+		// use one convention across commands.
+		cmd.Flags().StringVar(&rpgWorkspace, "workspace", "", "Workspace name to query the RPG index for (reads the shared postgres store when configured)")
+		cmd.Flags().StringVar(&rpgProject, "project", "", "Project name within workspace (requires --workspace)")
 	}
 
 	rpgSearchCmd.Flags().StringVar(&rpgSearchScope, "scope", "", "Area/category path to narrow search, such as 'cli' or 'rpg/query'")
@@ -139,43 +144,32 @@ func parseRPGEdgeTypes(edgeTypesStr string) ([]rpg.EdgeType, error) {
 	return edgeTypes, nil
 }
 
+func validateRPGWorkspaceFlags() error {
+	if rpgProject != "" && rpgWorkspace == "" {
+		return fmt.Errorf("--project requires --workspace")
+	}
+	return nil
+}
+
+// loadRPGStore resolves the RPG store through the shared dual-mode loader:
+// explicit --workspace reads the workspace scope, otherwise cwd attribution
+// picks the shared (postgres) store or the local single-project gob.
+func loadRPGStore(ctx context.Context) (rpg.RPGStore, *rpg.QueryEngine, error) {
+	store, qe, err := rpg.LoadRPGForScope(ctx, rpgWorkspace, rpgProject)
+	if errors.Is(err, rpg.ErrRPGIndexOutdated) {
+		return nil, nil, fmt.Errorf("RPG index is outdated; run 'grepai watch' to rebuild")
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return store, qe, nil
+}
+
 func validateRPGDirection(direction string) error {
 	if direction != "forward" && direction != "reverse" && direction != "both" {
 		return fmt.Errorf("direction must be 'forward', 'reverse', or 'both'")
 	}
 	return nil
-}
-
-func loadLocalRPG(ctx context.Context) (*rpg.GOBRPGStore, *rpg.QueryEngine, error) {
-	projectRoot, err := config.FindProjectRoot()
-	if err != nil {
-		return nil, nil, err
-	}
-	cfg, err := config.Load(projectRoot)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load configuration: %w", err)
-	}
-	if !cfg.RPG.Enabled {
-		return nil, nil, fmt.Errorf("RPG is not enabled or index is empty")
-	}
-
-	store := rpg.NewGOBRPGStore(config.GetRPGIndexPath(projectRoot))
-	if err := store.Load(ctx); errors.Is(err, rpg.ErrRPGIndexOutdated) {
-		return nil, nil, fmt.Errorf("RPG index is outdated; run 'grepai watch' to rebuild")
-	} else if err != nil {
-		return nil, nil, fmt.Errorf("failed to load RPG: %w", err)
-	}
-	stats, err := store.GetStats(ctx)
-	if err != nil {
-		_ = store.Close()
-		return nil, nil, fmt.Errorf("failed to read RPG stats: %w", err)
-	}
-	if stats.TotalNodes == 0 {
-		_ = store.Close()
-		return nil, nil, fmt.Errorf("RPG is not enabled or index is empty")
-	}
-
-	return store, rpg.NewQueryEngine(store.GetGraph()), nil
 }
 
 func outputRPGStructured(data any) error {
@@ -196,11 +190,14 @@ func outputRPGStructured(data any) error {
 
 func runRPGSearch(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
+	if err := validateRPGWorkspaceFlags(); err != nil {
+		return err
+	}
 	kinds, err := parseRPGNodeKinds(rpgSearchKinds)
 	if err != nil {
 		return err
 	}
-	store, qe, err := loadLocalRPG(ctx)
+	store, qe, err := loadRPGStore(ctx)
 	if err != nil {
 		return err
 	}
@@ -223,7 +220,10 @@ func runRPGSearch(cmd *cobra.Command, args []string) error {
 
 func runRPGFetch(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	store, qe, err := loadLocalRPG(ctx)
+	if err := validateRPGWorkspaceFlags(); err != nil {
+		return err
+	}
+	store, qe, err := loadRPGStore(ctx)
 	if err != nil {
 		return err
 	}
@@ -275,6 +275,9 @@ func displayRPGFetchResult(result *rpg.FetchNodeResult) error {
 
 func runRPGExplore(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
+	if err := validateRPGWorkspaceFlags(); err != nil {
+		return err
+	}
 	if err := validateRPGDirection(rpgExploreDirection); err != nil {
 		return err
 	}
@@ -282,7 +285,7 @@ func runRPGExplore(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	store, qe, err := loadLocalRPG(ctx)
+	store, qe, err := loadRPGStore(ctx)
 	if err != nil {
 		return err
 	}
