@@ -12,6 +12,17 @@ BIN="${GREPAI_BIN:-$REPO_ROOT/tests/.cache/grepai-e2e}"
 OLLAMA="${GREPAI_OLLAMA:-http://192.168.1.210:11434}"
 PROJECT="$(mktemp -d "${TMPDIR:-/tmp}/grepai-rpg-e2e.XXXXXX")"
 
+# Mid-failure exits (set -e, or the labeled failures below) must not leak the
+# throwaway watcher or its project dir; the EXIT trap reaps both.
+WATCH_STARTED=0
+cleanup() {
+  if [ "$WATCH_STARTED" = 1 ]; then
+    (cd "$PROJECT" && "$BIN" watch --stop >/dev/null 2>&1 || true)
+  fi
+  rm -rf "$PROJECT"
+}
+trap cleanup EXIT
+
 echo "[1/5] Build"
 if [ ! -x "$BIN" ]; then
   mkdir -p "$(dirname "$BIN")"
@@ -41,6 +52,7 @@ grep -A1 '^rpg:' "$PROJECT/.grepai/config.yaml" | grep -q 'enabled: true'
 
 echo "[3/5] Index via background watch"
 (cd "$PROJECT" && "$BIN" watch --background --log-dir "$PROJECT/.grepai/logs" >/dev/null)
+WATCH_STARTED=1
 for _ in $(seq 1 120); do
   if (cd "$PROJECT" && "$BIN" rpg search "runSearch" --json >/dev/null 2>&1); then
     break
@@ -62,7 +74,6 @@ m1="$(stat -c '%Y' "$PROJECT/.grepai/rpg.gob")"
 m2="$(stat -c '%Y' "$PROJECT/.grepai/rpg.gob")"
 [ "$m1" = "$m2" ] || { echo "read path rewrote rpg.gob"; exit 5; }
 
-# Stop the throwaway watcher so the e2e leaves no background daemon behind.
-(cd "$PROJECT" && "$BIN" watch --stop >/dev/null 2>&1 || true)
+# The throwaway watcher and project dir are reaped by the EXIT trap.
 
 echo "PASS: single-project RPG flow (search=$count results, fetch/explore ok, zero-write)"

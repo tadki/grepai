@@ -194,3 +194,57 @@ func TestRefsProjectCompletion_should_return_workspace_projects(t *testing.T) {
 		}
 	}
 }
+
+// TestRPGCompletion_should_suggest_workspaces_and_projects locks the rpg
+// commands' flag completions: without registration, `grepai rpg search
+// --workspace <TAB>` falls back to file completion instead of workspace names.
+func TestRPGCompletion_should_suggest_workspaces_and_projects(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	wsCfg := &config.WorkspaceConfig{
+		Version: 1,
+		Workspaces: map[string]config.Workspace{
+			"test-ws": {
+				Name: "test-ws",
+				Projects: []config.ProjectEntry{
+					{Name: "frontend", Path: "/tmp/frontend"},
+					{Name: "backend", Path: "/tmp/backend"},
+				},
+			},
+		},
+	}
+	if err := config.SaveWorkspaceConfig(wsCfg); err != nil {
+		t.Fatalf("failed to save test workspace config: %v", err)
+	}
+
+	for _, cmd := range []string{"search", "fetch", "explore"} {
+		var buf bytes.Buffer
+		rootCmd.SetOut(&buf)
+		rootCmd.SetErr(&buf)
+		rootCmd.SetArgs([]string{"__complete", "rpg", cmd, "--workspace", ""})
+
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("__complete rpg %s --workspace failed: %v", cmd, err)
+		}
+		if !strings.Contains(buf.String(), "test-ws") {
+			t.Fatalf("rpg %s --workspace completion missing test-ws, got: %s", cmd, buf.String())
+		}
+
+		buf.Reset()
+		rootCmd.SetArgs([]string{"__complete", "rpg", cmd, "--workspace", "test-ws", "--project", ""})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("__complete rpg %s --project failed: %v", cmd, err)
+		}
+		output := buf.String()
+		for _, project := range []string{"frontend", "backend"} {
+			if !strings.Contains(output, project) {
+				t.Fatalf("rpg %s --project completion missing %q, got: %s", cmd, project, output)
+			}
+		}
+	}
+	rootCmd.SetOut(nil)
+	rootCmd.SetErr(nil)
+}
