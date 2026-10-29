@@ -182,10 +182,10 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("path",
-			mcp.Description("Path prefix to filter results. When projects is set, path is relative to each selected project root (not workspace root). Examples: workspace-only path='src/' and workspace+projects path='MM32/src' or 'api/'."),
+			mcp.Description("Path prefix to filter results, always relative to a project root — never a project name prefix (use 'src/', not 'myproject/src'). When projects is set, path is relative to each selected project root (not workspace root)."),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project search (optional)"),
+			mcp.Description("Workspace name for cross-project search (optional; call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("projects",
 			mcp.Description("Comma-separated list of project names to search within workspace (requires workspace)"),
@@ -207,7 +207,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project trace (optional)"),
+			mcp.Description("Workspace name for cross-project trace (optional; call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
 			mcp.Description("Project name within workspace (requires workspace)"),
@@ -229,7 +229,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project trace (optional)"),
+			mcp.Description("Workspace name for cross-project trace (optional; call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
 			mcp.Description("Project name within workspace (requires workspace)"),
@@ -254,7 +254,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project trace (optional)"),
+			mcp.Description("Workspace name for cross-project trace (optional; call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
 			mcp.Description("Project name within workspace (requires workspace)"),
@@ -275,7 +275,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project refs (optional)"),
+			mcp.Description("Workspace name for cross-project refs (optional; call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
 			mcp.Description("Project name within workspace (requires workspace)"),
@@ -296,7 +296,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project refs (optional)"),
+			mcp.Description("Workspace name for cross-project refs (optional; call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
 			mcp.Description("Project name within workspace (requires workspace)"),
@@ -317,7 +317,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project refs (optional)"),
+			mcp.Description("Workspace name for cross-project refs (optional; call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
 			mcp.Description("Project name within workspace (requires workspace)"),
@@ -379,7 +379,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project RPG query (optional)"),
+			mcp.Description("Workspace name for cross-project RPG query (optional; call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
 			mcp.Description("Project name within workspace (requires workspace)"),
@@ -398,7 +398,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project RPG query (optional)"),
+			mcp.Description("Workspace name for cross-project RPG query (optional; call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
 			mcp.Description("Project name within workspace (requires workspace)"),
@@ -429,7 +429,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project RPG query (optional)"),
+			mcp.Description("Workspace name for cross-project RPG query (optional; call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
 			mcp.Description("Project name within workspace (requires workspace)"),
@@ -592,6 +592,15 @@ func (s *Server) handleSearch(ctx context.Context, request mcp.CallToolRequest) 
 	return mcp.NewToolResultText(output), nil
 }
 
+// validWorkspaceNamesHint renders the configured workspace names for
+// "workspace not found" errors so callers can self-correct without an extra
+// tool call round-trip.
+func validWorkspaceNamesHint(names []string) string {
+	sorted := append([]string(nil), names...)
+	sort.Strings(sorted)
+	return strings.Join(sorted, ", ")
+}
+
 // handleWorkspaceSearch handles workspace-level search via MCP.
 func (s *Server) handleWorkspaceSearch(ctx context.Context, query string, limit int, compact bool, format, pathPrefix, workspaceName, projectsStr string) (*mcp.CallToolResult, error) {
 	// Load workspace config
@@ -605,7 +614,7 @@ func (s *Server) handleWorkspaceSearch(ctx context.Context, query string, limit 
 
 	ws, err := wsCfg.GetWorkspace(workspaceName)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("workspace not found: %v", err)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("workspace not found: %v. Valid workspaces: %s — call grepai_list_workspaces to discover them", err, validWorkspaceNamesHint(wsCfg.ListWorkspaces()))), nil
 	}
 
 	projectNames := parseProjectNames(projectsStr)
@@ -1987,7 +1996,7 @@ func (s *Server) handleIndexStatus(ctx context.Context, request mcp.CallToolRequ
 		}
 		ws, err := wsCfg.GetWorkspace(workspace)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("workspace not found: %v", err)), nil
+			return mcp.NewToolResultError(fmt.Sprintf("workspace not found: %v. Valid workspaces: %s — call grepai_list_workspaces to discover them", err, validWorkspaceNamesHint(wsCfg.ListWorkspaces()))), nil
 		}
 
 		wsStatus := WorkspaceIndexStatus{
@@ -2156,7 +2165,7 @@ func (s *Server) handleListProjects(ctx context.Context, request mcp.CallToolReq
 	// Get specific workspace
 	wsEntry, exists := wsConfig.Workspaces[workspace]
 	if !exists {
-		return mcp.NewToolResultError(fmt.Sprintf("workspace '%s' not found", workspace)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("workspace '%s' not found. Valid workspaces: %s — call grepai_list_workspaces to discover them", workspace, validWorkspaceNamesHint(wsConfig.ListWorkspaces()))), nil
 	}
 
 	// Build projects list from wsEntry.Projects (slice of ProjectEntry)
