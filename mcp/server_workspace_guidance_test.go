@@ -190,6 +190,27 @@ func registerWorkspaceErrorCases(t *testing.T, s *Server, ctx context.Context, v
 		result, err := s.handleListProjects(ctx, req)
 		assertActionableWorkspaceError(t, result, err, validNames, foreign)
 	})
+
+	// The three rpg handlers resolve the workspace through the shared
+	// tryLoadRPGForScope path; the failure must carry the same discovery
+	// hint as the direct workspace paths instead of the bare loader error.
+	t.Run("rpg_search", func(t *testing.T) {
+		req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"workspace": "no-such", "query": "needle"}}}
+		result, err := s.handleRPGSearch(ctx, req)
+		assertActionableWorkspaceError(t, result, err, validNames, foreign)
+	})
+
+	t.Run("rpg_fetch", func(t *testing.T) {
+		req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"workspace": "no-such", "node_id": "sym:x"}}}
+		result, err := s.handleRPGFetch(ctx, req)
+		assertActionableWorkspaceError(t, result, err, validNames, foreign)
+	})
+
+	t.Run("rpg_explore", func(t *testing.T) {
+		req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"workspace": "no-such", "start_node_id": "sym:x"}}}
+		result, err := s.handleRPGExplore(ctx, req)
+		assertActionableWorkspaceError(t, result, err, validNames, foreign)
+	})
 }
 
 // Two disjoint configurations are exercised in sequence. The error must list
