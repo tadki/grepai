@@ -592,13 +592,13 @@ func (s *Server) handleSearch(ctx context.Context, request mcp.CallToolRequest) 
 	return mcp.NewToolResultText(output), nil
 }
 
-// validWorkspaceNamesHint renders the configured workspace names for
+// workspaceDiscoveryHint renders the valid-workspaces clause of
 // "workspace not found" errors so callers can self-correct without an extra
-// tool call round-trip.
-func validWorkspaceNamesHint(names []string) string {
+// tool call round-trip. Names are sorted for deterministic output.
+func workspaceDiscoveryHint(names []string) string {
 	sorted := append([]string(nil), names...)
 	sort.Strings(sorted)
-	return strings.Join(sorted, ", ")
+	return fmt.Sprintf("Valid workspaces: %s — call grepai_list_workspaces to discover them", strings.Join(sorted, ", "))
 }
 
 // handleWorkspaceSearch handles workspace-level search via MCP.
@@ -614,7 +614,7 @@ func (s *Server) handleWorkspaceSearch(ctx context.Context, query string, limit 
 
 	ws, err := wsCfg.GetWorkspace(workspaceName)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("workspace not found: %v. Valid workspaces: %s — call grepai_list_workspaces to discover them", err, validWorkspaceNamesHint(wsCfg.ListWorkspaces()))), nil
+		return mcp.NewToolResultError(fmt.Sprintf("workspace not found: %v. %s", err, workspaceDiscoveryHint(wsCfg.ListWorkspaces()))), nil
 	}
 
 	projectNames := parseProjectNames(projectsStr)
@@ -1996,7 +1996,7 @@ func (s *Server) handleIndexStatus(ctx context.Context, request mcp.CallToolRequ
 		}
 		ws, err := wsCfg.GetWorkspace(workspace)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("workspace not found: %v. Valid workspaces: %s — call grepai_list_workspaces to discover them", err, validWorkspaceNamesHint(wsCfg.ListWorkspaces()))), nil
+			return mcp.NewToolResultError(fmt.Sprintf("workspace not found: %v. %s", err, workspaceDiscoveryHint(wsCfg.ListWorkspaces()))), nil
 		}
 
 		wsStatus := WorkspaceIndexStatus{
@@ -2165,7 +2165,7 @@ func (s *Server) handleListProjects(ctx context.Context, request mcp.CallToolReq
 	// Get specific workspace
 	wsEntry, exists := wsConfig.Workspaces[workspace]
 	if !exists {
-		return mcp.NewToolResultError(fmt.Sprintf("workspace '%s' not found. Valid workspaces: %s — call grepai_list_workspaces to discover them", workspace, validWorkspaceNamesHint(wsConfig.ListWorkspaces()))), nil
+		return mcp.NewToolResultError(fmt.Sprintf("workspace '%s' not found. %s", workspace, workspaceDiscoveryHint(wsConfig.ListWorkspaces()))), nil
 	}
 
 	// Build projects list from wsEntry.Projects (slice of ProjectEntry)
