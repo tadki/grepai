@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 	"github.com/yoanbernabeu/grepai/config"
 )
 
@@ -13,10 +14,9 @@ import (
 // can be inspected exactly as an MCP client would see them via tools/list.
 func newRegisteredTestServer(t *testing.T) *Server {
 	t.Helper()
-	s, err := NewServer(t.TempDir())
-	if err != nil {
-		t.Fatalf("NewServer returned error: %v", err)
-	}
+	s := &Server{projectRoot: "/tmp/test-project"}
+	s.mcpServer = server.NewMCPServer("grepai-test", "1.0.0")
+	s.registerTools()
 	return s
 }
 
@@ -40,7 +40,7 @@ func propertyDescription(t *testing.T, s *Server, toolName, param string) string
 // The grepai_search path example used to be self-contradictory: the prose said
 // path is project-relative but the example showed a project-prefixed path
 // ('MM32/src'), which the server rejects with path_not_within_selected_project.
-func TestWorkspaceSearchToolDescription_ShouldNotSuggestProjectPrefixedPath(t *testing.T) {
+func TestWorkspaceSearchToolDescription_should_not_suggest_project_prefixed_path(t *testing.T) {
 	s := newRegisteredTestServer(t)
 	desc := propertyDescription(t, s, "grepai_search", "path")
 
@@ -54,7 +54,7 @@ func TestWorkspaceSearchToolDescription_ShouldNotSuggestProjectPrefixedPath(t *t
 
 // Baseline 164eb79 has 10 cross-project workspace parameters; every one must
 // tell the caller how to discover valid workspace names instead of guessing.
-func TestWorkspaceParamDescriptions_ShouldPointToListWorkspaces(t *testing.T) {
+func TestWorkspaceParamDescriptions_should_point_to_list_workspaces(t *testing.T) {
 	s := newRegisteredTestServer(t)
 	tools := s.mcpServer.ListTools()
 
@@ -118,14 +118,7 @@ func assertActionableWorkspaceError(t *testing.T, result *mcp.CallToolResult, er
 	if result == nil || !result.IsError {
 		t.Fatalf("expected tool error result, got %+v", result)
 	}
-	if len(result.Content) == 0 {
-		t.Fatal("error result has no content")
-	}
-	textContent, ok := result.Content[0].(mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected text content, got %T", result.Content[0])
-	}
-	text := textContent.Text
+	text := textResultPayload(t, result)
 	for _, want := range []string{"no-such", "alpha", "beta", "grepai_list_workspaces"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("error message %q does not mention %q", text, want)
@@ -133,23 +126,23 @@ func assertActionableWorkspaceError(t *testing.T, result *mcp.CallToolResult, er
 	}
 }
 
-func TestWorkspaceNotFoundError_ShouldListValidNames(t *testing.T) {
+func TestWorkspaceNotFoundError_should_list_valid_names(t *testing.T) {
 	workspaceNotFoundErrorFixture(t)
 	s := newRegisteredTestServer(t)
 	ctx := context.Background()
 
-	t.Run("workspace search", func(t *testing.T) {
+	t.Run("workspace_search", func(t *testing.T) {
 		result, err := s.handleWorkspaceSearch(ctx, "needle", 10, false, "json", "", "no-such", "")
 		assertActionableWorkspaceError(t, result, err)
 	})
 
-	t.Run("index status", func(t *testing.T) {
+	t.Run("index_status", func(t *testing.T) {
 		req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"workspace": "no-such"}}}
 		result, err := s.handleIndexStatus(ctx, req)
 		assertActionableWorkspaceError(t, result, err)
 	})
 
-	t.Run("list projects", func(t *testing.T) {
+	t.Run("list_projects", func(t *testing.T) {
 		req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"workspace": "no-such"}}}
 		result, err := s.handleListProjects(ctx, req)
 		assertActionableWorkspaceError(t, result, err)
