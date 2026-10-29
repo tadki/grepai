@@ -213,6 +213,34 @@ func registerWorkspaceErrorCases(t *testing.T, s *Server, ctx context.Context, v
 	})
 }
 
+// LOW-1 (baseline 164eb79): handleListProjects judged not-found with a direct
+// map lookup and a one-off 'workspace '%s' not found' format, unlike the
+// other workspace paths that go through GetWorkspace. This pins the shared
+// GetWorkspace message shape so a revert to the map-direct path fails here.
+func TestWorkspaceListProjectsError_should_use_getworkspace_shape(t *testing.T) {
+	setupWorkspaceHome(t)
+	saveWorkspaceConfig(t, "alpha")
+	s := newRegisteredTestServer(t)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"workspace": "no-such"}}}
+	result, err := s.handleListProjects(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler returned Go error: %v", err)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("expected tool error result, got %+v", result)
+	}
+	text := textResultPayload(t, result)
+	// GetWorkspace renders the double form 'workspace not found: workspace
+	// "no-such" not found'; the map-direct format used single quotes.
+	if !strings.Contains(text, `workspace not found: workspace "no-such" not found`) {
+		t.Errorf("list_projects error not in GetWorkspace shape: %q", text)
+	}
+	if strings.Contains(text, "'no-such'") {
+		t.Errorf("list_projects error still uses the map-direct quote format: %q", text)
+	}
+}
+
 // Two disjoint configurations are exercised in sequence. The error must list
 // the workspaces currently on disk; a mutation that hardcodes one fixture's
 // names (or otherwise stops reading ListWorkspaces) fails the second case,

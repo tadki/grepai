@@ -2162,10 +2162,12 @@ func (s *Server) handleListProjects(ctx context.Context, request mcp.CallToolReq
 		return mcp.NewToolResultError(fmt.Sprintf("failed to load workspace configuration: %v", err)), nil
 	}
 
-	// Get specific workspace
-	wsEntry, exists := wsConfig.Workspaces[workspace]
-	if !exists {
-		return mcp.NewToolResultError(fmt.Sprintf("workspace '%s' not found. %s", workspace, workspaceDiscoveryHint(wsConfig.ListWorkspaces()))), nil
+	// Get specific workspace through GetWorkspace like the other paths so the
+	// not-found message shares their shape (and a missing config file fails
+	// as not-found instead of panicking on the nil map).
+	wsEntry, wsErr := wsConfig.GetWorkspace(workspace)
+	if wsErr != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("workspace not found: %v. %s", wsErr, workspaceDiscoveryHint(wsConfig.ListWorkspaces()))), nil
 	}
 
 	// Build projects list from wsEntry.Projects (slice of ProjectEntry)
