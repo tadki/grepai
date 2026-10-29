@@ -2328,6 +2328,16 @@ func (s *Server) tryLoadRPGForScope(ctx context.Context, workspaceName, projectN
 // contract: a disabled/empty workspace yields no enrichment (nil), not an
 // error.
 func (s *Server) tryLoadWorkspaceRPG(ctx context.Context, workspaceName, projectName string) (rpg.RPGStore, *rpg.QueryEngine, error) {
+	// Pre-resolve the workspace so an unknown name fails with the
+	// self-correcting discovery hint, matching the other workspace MCP
+	// paths; without a config (or on read errors) fall through and let the
+	// shared loader produce its own diagnostics.
+	wsCfg, cfgErr := config.LoadWorkspaceConfig()
+	if cfgErr == nil && wsCfg != nil {
+		if _, wsErr := wsCfg.GetWorkspace(workspaceName); wsErr != nil {
+			return nil, nil, fmt.Errorf("workspace not found: %v. %s", wsErr, workspaceDiscoveryHint(wsCfg.ListWorkspaces()))
+		}
+	}
 	store, qe, err := rpg.LoadWorkspaceRPG(ctx, workspaceName, projectName)
 	if err != nil && errors.Is(err, rpg.ErrRPGIndexEmpty) {
 		return nil, nil, nil
