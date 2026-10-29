@@ -333,7 +333,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name to check status for (optional)"),
+			mcp.Description("Workspace name to check status for (optional; call grepai_list_workspaces first to discover valid names)"),
 		),
 	)
 	s.mcpServer.AddTool(indexStatusTool, s.handleIndexStatus)
@@ -351,7 +351,7 @@ func (s *Server) registerTools() {
 	listProjectsTool := mcp.NewTool("grepai_list_projects",
 		mcp.WithDescription("List all projects within a workspace. Use this to discover project names and file paths relative to their project roots, which informs how to use the --path parameter in grepai_search."),
 		mcp.WithString("workspace",
-			mcp.Description("Name of the workspace to list projects for (optional when mcp-serve was started with --workspace)"),
+			mcp.Description("Name of the workspace to list projects for (optional when mcp-serve was started with --workspace; call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("format",
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
