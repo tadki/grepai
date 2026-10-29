@@ -69,8 +69,14 @@ func TestWorkspaceSearchToolDescription_should_not_suggest_project_prefixed_path
 	}
 }
 
-// Baseline 164eb79 has 10 cross-project workspace parameters; every one must
-// tell the caller how to discover valid workspace names instead of guessing.
+// Every registered tool that accepts a workspace parameter must tell the
+// caller how to discover valid workspace names instead of guessing. The loop
+// below must NOT filter by description wording: QA on 8915f3b proved that a
+// prose prefix filter ('Workspace name for cross-project') hid two real
+// workspace parameters (grepai_index_status, grepai_list_projects) whose
+// descriptions worded it differently — the filter passed while the live
+// tools/list schema was 10/12 covered.
+//
 // Presence of the bare tool name is weak — a description could name the tool
 // yet not instruct the caller to use it first. Requiring the full discovery
 // clause kills mutations that keep the token but drop the guidance.
@@ -87,16 +93,16 @@ func TestWorkspaceParamDescriptions_should_point_to_list_workspaces(t *testing.T
 			continue
 		}
 		desc, _ := prop["description"].(string)
-		if !strings.Contains(desc, "Workspace name for cross-project") {
-			continue
-		}
 		count++
 		if !strings.Contains(desc, discoveryClause) {
 			t.Errorf("tool %q workspace description lacks the discovery clause %q: %q", st.Tool.Name, discoveryClause, desc)
 		}
 	}
-	if count < 10 {
-		t.Fatalf("expected at least 10 cross-project workspace parameters, found %d", count)
+	// Baseline 164eb79 ships 12 workspace parameters (10 cross-project +
+	// index_status + list_projects); the floor guards against a future tool
+	// dropping its workspace property from the schema entirely.
+	if count < 12 {
+		t.Fatalf("expected at least 12 tools with a workspace parameter, found %d", count)
 	}
 }
 
