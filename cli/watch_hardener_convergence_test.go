@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,5 +137,46 @@ func TestWorkspaceStoreProbeUnsupportedBackendFails(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "availability probe unsupported") {
 		t.Fatalf("err %q lacks unsupported-backend reason", err.Error())
+	}
+}
+
+// TestShowWorkspaceStatusLocalLineSuffixPinned pins the rendered
+// locally-available line including its check-mark suffix (kills mutant
+// S8n-local-suffix-drop from the a2cb0ab differential matrix).
+func TestShowWorkspaceStatusLocalLineSuffixPinned(t *testing.T) {
+	base := t.TempDir()
+	local := filepath.Join(base, "local")
+	if err := os.MkdirAll(local, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	ws := &config.Workspace{
+		Name:  "sfx-ws",
+		Store: config.StoreConfig{Backend: "postgres", Postgres: config.PostgresConfig{DSN: "postgres://probe/sfx"}},
+		Projects: []config.ProjectEntry{
+			{Name: "local", Path: local},
+		},
+	}
+	oldProbe := workspaceStoreProbe
+	t.Cleanup(func() { workspaceStoreProbe = oldProbe })
+	workspaceStoreProbe = func(ctx context.Context, ws *config.Workspace, project config.ProjectEntry) (bool, error) {
+		return false, fmt.Errorf("db down")
+	}
+
+	out := captureStdout(t, func() {
+		if err := showWorkspaceStatus(ws); err != nil {
+			t.Fatalf("showWorkspaceStatus: %v", err)
+		}
+	})
+	localLine := ""
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "    - local:") {
+			localLine = line
+		}
+	}
+	if localLine == "" {
+		t.Fatalf("local project line missing from output %q", out)
+	}
+	if !strings.Contains(localLine, "locally-available ✓") {
+		t.Fatalf("locally-available line %q must render the check-mark suffix", localLine)
 	}
 }
