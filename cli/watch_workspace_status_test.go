@@ -358,3 +358,13 @@ func TestWorkspaceWatchStrictScanPrintsTotalsLine(t *testing.T) {
 		t.Fatalf("stdout %q lacks delta+total line", out)
 	}
 }
+
+// TestWorkspaceWatchServingOnlyStatusClassification names the serving-only
+// disclosure explicitly for the workspace-watch failure matrix: a project
+// with no local checkout but live shared-store data is servable, not failed.
+func TestWorkspaceWatchServingOnlyStatusClassification(t *testing.T) {
+	state, reason := classifyWorkspaceProjectAvailability(false, true, nil)
+	if state != "serving-only" || reason != "" {
+		t.Fatalf("state=%q reason=%q, want serving-only with empty reason", state, reason)
+	}
+}
