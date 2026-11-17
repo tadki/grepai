@@ -1,9 +1,11 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -126,19 +128,34 @@ func (c *WorkspaceConfig) GetWorkspace(name string) (*Workspace, error) {
 	return &ws, nil
 }
 
+// ErrAmbiguousWorkspacePath reports that two or more configured workspaces
+// claim the same project path, so no deterministic owning workspace exists.
+// Callers must fail loud instead of guessing; an explicit workspace name
+// bypasses this inference entirely.
+var ErrAmbiguousWorkspacePath = errors.New("project path claimed by multiple workspaces")
+
 // FindOwningWorkspace resolves which configured workspace contains the
 // project directory at projectPath (path-cleaned comparison). Returns
-// ok=false when no workspace lists that path. The nil config is treated as
-// "no workspaces configured".
-func (c *WorkspaceConfig) FindOwningWorkspace(projectPath string) (*Workspace, *ProjectEntry, bool) {
+// ok=false when no workspace lists that path. When two or more workspaces
+// claim the same path it returns ErrAmbiguousWorkspacePath naming every
+// candidate in sorted order — the previous map-iteration behavior let a
+// random workspace win, so ownership inference must be deterministic.
+// The nil config is treated as "no workspaces configured".
+func (c *WorkspaceConfig) FindOwningWorkspace(projectPath string) (*Workspace, *ProjectEntry, bool, error) {
 	if c == nil || c.Workspaces == nil {
-		return nil, nil, false
+		return nil, nil, false, nil
 	}
 	want, err := filepath.Abs(projectPath)
 	if err != nil {
-		return nil, nil, false
+		return nil, nil, false, nil
 	}
 	want = filepath.Clean(want)
+	var (
+		matchName   string
+		matchWs     *Workspace
+		matchProj   *ProjectEntry
+		candidates  []string
+	)
 	for name := range c.Workspaces {
 		ws := c.Workspaces[name]
 		for i := range ws.Projects {
@@ -147,12 +164,28 @@ func (c *WorkspaceConfig) FindOwningWorkspace(projectPath string) (*Workspace, *
 			if err != nil {
 				continue
 			}
-			if filepath.Clean(pPath) == want {
-				return &ws, &ws.Projects[i], true
+			if filepath.Clean(pPath) != want {
+				continue
+			}
+			candidates = append(candidates, name)
+			// Keep the lexicographically first workspace as the deterministic
+			// representative; ambiguity is still an error below.
+			if matchWs == nil || name < matchName {
+				matchName = name
+				wsCopy := ws
+				matchWs = &wsCopy
+				matchProj = &wsCopy.Projects[i]
 			}
 		}
 	}
-	return nil, nil, false
+	if len(candidates) > 1 {
+		sort.Strings(candidates)
+		return nil, nil, false, fmt.Errorf("%w: %s", ErrAmbiguousWorkspacePath, strings.Join(candidates, ", "))
+	}
+	if matchWs == nil {
+		return nil, nil, false, nil
+	}
+	return matchWs, matchProj, true, nil
 }
 
 // AddWorkspace adds a new workspace to the configuration.
@@ -267,7 +300,10 @@ func (c *WorkspaceConfig) ListWorkspaces() []string {
 }
 
 // FindWorkspaceForPath checks if the given path is within any workspace project.
-// Returns workspace name and workspace config if found, or ("", nil, nil) if no match.
+// Returns workspace name and workspace config if found, or ("", nil, nil) if no
+// match. When the path sits inside projects of two or more workspaces it fails
+// with ErrAmbiguousWorkspacePath instead of letting map iteration order pick a
+// random owner.
 func FindWorkspaceForPath(targetPath string) (string, *Workspace, error) {
 	cfg, err := LoadWorkspaceConfig()
 	if err != nil {
@@ -282,6 +318,11 @@ func FindWorkspaceForPath(targetPath string) (string, *Workspace, error) {
 		targetPath = resolved
 	}
 
+	var (
+		matchName   string
+		matchWs     *Workspace
+		candidates  []string
+	)
 	for name, ws := range cfg.Workspaces {
 		for _, proj := range ws.Projects {
 			projPath := proj.Path
@@ -292,12 +333,23 @@ func FindWorkspaceForPath(targetPath string) (string, *Workspace, error) {
 			if err != nil {
 				continue
 			}
-			if !strings.HasPrefix(rel, "..") {
+			if strings.HasPrefix(rel, "..") {
+				continue
+			}
+			candidates = append(candidates, name)
+			if matchWs == nil || name < matchName {
+				matchName = name
 				wsCopy := ws
-				return name, &wsCopy, nil
+				matchWs = &wsCopy
 			}
 		}
 	}
-
-	return "", nil, nil
+	if len(candidates) > 1 {
+		sort.Strings(candidates)
+		return "", nil, fmt.Errorf("%w: %s", ErrAmbiguousWorkspacePath, strings.Join(candidates, ", "))
+	}
+	if matchWs == nil {
+		return "", nil, nil
+	}
+	return matchName, matchWs, nil
 }
