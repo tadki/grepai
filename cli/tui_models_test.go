@@ -76,11 +76,16 @@ func TestWatchUIModelSessionHelpers(t *testing.T) {
 		t.Fatal("view after session churn must render")
 	}
 
-	// Focus clamps to the valid range.
-	m.sessionFocus = 99
+	// Focus on the live session stays valid; a removed session clears focus.
+	m.sessionFocus = 1
 	m.ensureSessionFocusValid()
-	if m.sessionFocus < 0 || m.sessionFocus >= len(m.sessionOrder) {
-		t.Fatalf("sessionFocus = %d outside order", m.sessionFocus)
+	if m.sessionFocus != 1 {
+		t.Fatalf("focus on running session = %d, want 1", m.sessionFocus)
+	}
+	m.sessionFocus = 0
+	m.ensureSessionFocusValid()
+	if m.sessionFocus != -1 {
+		t.Fatalf("focus on removed session = %d, want -1", m.sessionFocus)
 	}
 }
 
