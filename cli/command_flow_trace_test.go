@@ -218,8 +218,8 @@ func TestRPGCommandFlows(t *testing.T) {
 func TestCompletionCommandFlows(t *testing.T) {
 	for _, shell := range []string{"zsh", "bash", "fish", "powershell"} {
 		out, err := captureFlowStdout(t, func() error {
-			completionCmd.SetArgs([]string{shell})
-			return completionCmd.Execute()
+			rootCmd.SetArgs([]string{"completion", shell})
+			return rootCmd.Execute()
 		})
 		if err != nil {
 			t.Fatalf("completion %s: %v", shell, err)
