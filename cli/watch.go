@@ -36,6 +36,7 @@ var (
 	watchStatus     bool
 	watchStop       bool
 	watchWorkspace  string
+	watchProjects   []string
 	watchNoUI       bool
 )
 
@@ -67,6 +68,22 @@ The watcher will:
 - Apply debouncing (500ms) to batch rapid changes
 - Handle atomic updates to avoid duplicate vectors
 
+Workspace mode:
+  grepai watch --workspace <name>          Watch every project in the workspace
+  grepai watch --workspace <name> --project <p> [--project <q> ...]
+                                           Watch only the named project(s).
+                                           --project is repeatable; unknown or
+                                           duplicate names fail, and --project
+                                           requires --workspace. Projects are
+                                           filtered before any path check, so an
+                                           unselected project with a missing
+                                           path cannot block startup. Every
+                                           selected project must initialize
+                                           fully (config, store, embedder,
+                                           symbols, RPG, initial scan) or the
+                                           watcher exits with an error naming
+                                           the project, stage and reason.
+
 Background mode:
   grepai watch --background              Run in background with default log directory
   grepai watch --background --log-dir /custom/path  Run with custom log directory
@@ -92,7 +109,57 @@ func init() {
 	watchCmd.Flags().BoolVar(&watchStatus, "status", false, "Show background watcher status")
 	watchCmd.Flags().BoolVar(&watchStop, "stop", false, "Stop the background watcher")
 	watchCmd.Flags().StringVar(&watchWorkspace, "workspace", "", "Workspace name for multi-project mode")
+	watchCmd.Flags().StringArrayVar(&watchProjects, "project", nil, "Watch only the named project(s) within --workspace (repeatable, e.g. --project a --project b). Unknown or duplicate names fail; without --project all workspace projects are watched")
 	watchCmd.Flags().BoolVar(&watchNoUI, "no-ui", false, "Disable interactive UI in foreground mode")
+}
+
+// validateWatchProjectUsage enforces that --project is only used together
+// with --workspace: project selection is a workspace-scoped filter and a
+// non-workspace invocation is a usage error, not a silent no-op.
+func validateWatchProjectUsage(workspace string, projects []string) error {
+	if len(projects) > 0 && workspace == "" {
+		return fmt.Errorf("--project requires --workspace; project selection is a workspace-scoped filter")
+	}
+	return nil
+}
+
+// selectWorkspaceProjects applies the repeatable --project filter to a
+// workspace's project list. An empty selection returns the workspace
+// unchanged (all projects). Unknown or duplicate names fail loud so a typo
+// can never silently shrink the watched set; filtering happens before any
+// path existence check so unselected projects with broken paths cannot block
+// startup.
+func selectWorkspaceProjects(ws *config.Workspace, selected []string) (*config.Workspace, error) {
+	if len(selected) == 0 {
+		return ws, nil
+	}
+	seen := make(map[string]bool, len(selected))
+	for _, name := range selected {
+		if seen[name] {
+			return nil, fmt.Errorf("duplicate --project value %q in workspace %q", name, ws.Name)
+		}
+		seen[name] = true
+	}
+	known := make(map[string]config.ProjectEntry, len(ws.Projects))
+	names := make([]string, 0, len(ws.Projects))
+	for _, p := range ws.Projects {
+		known[p.Name] = p
+		names = append(names, p.Name)
+	}
+	sort.Strings(names)
+	for _, name := range selected {
+		if _, ok := known[name]; !ok {
+			return nil, fmt.Errorf("project %q not found in workspace %q; known projects: %s", name, ws.Name, strings.Join(names, ", "))
+		}
+	}
+	wsCopy := *ws
+	wsCopy.Projects = make([]config.ProjectEntry, 0, len(selected))
+	for _, p := range ws.Projects {
+		if seen[p.Name] {
+			wsCopy.Projects = append(wsCopy.Projects, p)
+		}
+	}
+	return &wsCopy, nil
 }
 
 func runWatch(cmd *cobra.Command, args []string) error {
@@ -109,6 +176,10 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	}
 	if activeFlags > 1 {
 		return fmt.Errorf("flags --background, --status, and --stop are mutually exclusive")
+	}
+
+	if err := validateWatchProjectUsage(watchWorkspace, watchProjects); err != nil {
+		return err
 	}
 
 	// Determine log directory
@@ -759,7 +830,11 @@ func runWatchLoop(ctx context.Context, st store.VectorStore, symbolStore project
 	}
 }
 
-func runInitialScan(ctx context.Context, idx *indexer.Indexer, scanner *indexer.Scanner, extractor *trace.RegexExtractor, symbolStore projectSymbolStore, tracedLanguages []string, lastIndexTime time.Time, isBackgroundChild bool, onScan func(current, total int, file string), onEmbed func(info indexer.BatchProgressInfo), processors ...*framework.ProcessorRegistry) (*indexer.IndexStats, error) {
+// strictSymbols flips per-file symbol failures from warn+skip to fail-loud:
+// a selected workspace project whose symbols or RPG graph silently degrade
+// would answer trace/refs queries with partial data while the watcher looks
+// healthy.
+func runInitialScan(ctx context.Context, idx *indexer.Indexer, scanner *indexer.Scanner, extractor *trace.RegexExtractor, symbolStore projectSymbolStore, tracedLanguages []string, lastIndexTime time.Time, isBackgroundChild bool, onScan func(current, total int, file string), onEmbed func(info indexer.BatchProgressInfo), strictSymbols bool, processors ...*framework.ProcessorRegistry) (*indexer.IndexStats, error) {
 	// Initial scan with progress
 	if !isBackgroundChild {
 		fmt.Println("\nPerforming initial scan...")
@@ -820,6 +895,7 @@ func runInitialScan(ctx context.Context, idx *indexer.Indexer, scanner *indexer.
 	}
 	symbolCount := 0
 	files := stats.ScannedFiles
+	var strictFailures []string
 
 	for _, file := range files {
 		ext := strings.ToLower(filepath.Ext(file.Path))
@@ -843,7 +919,11 @@ func runInitialScan(ctx context.Context, idx *indexer.Indexer, scanner *indexer.
 
 		fileInfo, err := scanner.ScanFile(file.Path)
 		if err != nil {
-			log.Printf("Warning: failed to scan %s for symbols: %v", file.Path, err)
+			if strictSymbols {
+				strictFailures = append(strictFailures, fmt.Sprintf("scan %s: %v", file.Path, err))
+			} else {
+				log.Printf("Warning: failed to scan %s for symbols: %v", file.Path, err)
+			}
 			continue
 		}
 		if fileInfo == nil {
@@ -863,21 +943,58 @@ func runInitialScan(ctx context.Context, idx *indexer.Indexer, scanner *indexer.
 
 		symbols, refs, err := extractSymbolsWithFramework(ctx, extractor, fileInfo.Path, fileInfo.Content, processors...)
 		if err != nil {
-			log.Printf("Warning: failed to extract symbols from %s: %v", fileInfo.Path, err)
+			if strictSymbols {
+				strictFailures = append(strictFailures, fmt.Sprintf("extract %s: %v", fileInfo.Path, err))
+			} else {
+				log.Printf("Warning: failed to extract symbols from %s: %v", fileInfo.Path, err)
+			}
 			continue
 		}
 		if err := symbolStore.SaveFileWithSignature(ctx, fileInfo.Path, fileInfo.Hash, extractor.Version(), symbols, refs); err != nil {
-			log.Printf("Warning: failed to save symbols for %s: %v", fileInfo.Path, err)
+			if strictSymbols {
+				strictFailures = append(strictFailures, fmt.Sprintf("save symbols %s: %v", fileInfo.Path, err))
+			} else {
+				log.Printf("Warning: failed to save symbols for %s: %v", fileInfo.Path, err)
+			}
+			continue
 		}
 		symbolCount += len(symbols)
 	}
 	if err := symbolStore.Persist(ctx); err != nil {
+		if strictSymbols {
+			return nil, fmt.Errorf("symbol persist failed: %w", err)
+		}
 		log.Printf("Warning: failed to persist symbol index: %v", err)
 	}
-	if !isBackgroundChild {
-		fmt.Printf("Symbol index built: %d symbols extracted\n", symbolCount)
+	// The old line printed only the per-run delta, which reads as "the index
+	// is empty" on every steady-state recycle; pair the delta with the store
+	// total so the log can't contradict the stored blob size.
+	totalStats, statsErr := symbolStore.GetStats(ctx)
+	if statsErr != nil {
+		if strictSymbols {
+			return nil, fmt.Errorf("symbol stats failed: %w", statsErr)
+		}
+		log.Printf("Warning: failed to read symbol index stats: %v", statsErr)
+	}
+	if strictSymbols && len(strictFailures) > 0 {
+		shown := strictFailures
+		if len(shown) > 5 {
+			shown = shown[:5]
+		}
+		return nil, fmt.Errorf("symbol stage failed for %d file(s): %s", len(strictFailures), strings.Join(shown, "; "))
+	}
+	if totalStats != nil {
+		if !isBackgroundChild {
+			fmt.Printf("Symbol index built: %d new symbols extracted, %d total in index (%d files)\n", symbolCount, totalStats.TotalSymbols, totalStats.TotalFiles)
+		} else {
+			log.Printf("Symbol index built: %d new symbols extracted, %d total in index (%d files)", symbolCount, totalStats.TotalSymbols, totalStats.TotalFiles)
+		}
 	} else {
-		log.Printf("Symbol index built: %d symbols extracted", symbolCount)
+		if !isBackgroundChild {
+			fmt.Printf("Symbol index built: %d symbols extracted\n", symbolCount)
+		} else {
+			log.Printf("Symbol index built: %d symbols extracted", symbolCount)
+		}
 	}
 
 	return stats, nil
@@ -1095,7 +1212,7 @@ func watchProjectWithEventObserver(ctx context.Context, projectRoot string, emb 
 	// In multi-worktree mode callers pass isBackgroundChild=true for non-interactive output.
 	// Run initial scan and build symbol index.
 	// In multi-worktree mode callers pass isBackgroundChild=true for non-interactive output.
-	stats, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, tracedLanguages, cfg.Watch.LastIndexTime, isBackgroundChild, onScan, onEmbed, processorRegistry)
+	stats, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, tracedLanguages, cfg.Watch.LastIndexTime, isBackgroundChild, onScan, onEmbed, false, processorRegistry)
 	if err != nil {
 		return err
 	}
@@ -2416,6 +2533,14 @@ func runWorkspaceWatch(logDir string) error {
 		return err
 	}
 
+	// Apply --project selection before any path existence check so unselected
+	// projects with broken paths cannot block startup (§ fail-loud applies to
+	// selected projects only).
+	ws, err = selectWorkspaceProjects(ws, watchProjects)
+	if err != nil {
+		return err
+	}
+
 	// Handle --status flag
 	if watchStatus {
 		return showWorkspaceWatchStatus(logDir, ws)
@@ -2518,10 +2643,14 @@ func startBackgroundWorkspaceWatch(logDir string, ws *config.Workspace) error {
 		return fmt.Errorf("workspace watcher %s is already running (PID %d)", ws.Name, pid)
 	}
 
-	// Build extra args
+	// Build extra args; the child must re-apply the same --project selection
+	// or a filtered background watcher would silently widen to all projects.
 	var extraArgs []string
 	if watchLogDir != "" {
 		extraArgs = append(extraArgs, "--log-dir", watchLogDir)
+	}
+	for _, name := range watchProjects {
+		extraArgs = append(extraArgs, "--project", name)
 	}
 
 	// Spawn background process
@@ -2613,25 +2742,9 @@ func runWorkspaceWatchForeground(logDir string, ws *config.Workspace) error {
 	}
 	defer st.Close()
 
-	runtimes := make(map[string]*workspaceProjectRuntime, len(ws.Projects))
-	watchers := make([]*watcher.Watcher, 0, len(ws.Projects))
-
-	for _, project := range ws.Projects {
-		if !isBackgroundChild {
-			fmt.Printf("\nIndexing project: %s (%s)\n", project.Name, project.Path)
-		} else {
-			log.Printf("Indexing project: %s (%s)", project.Name, project.Path)
-		}
-
-		runtime, w, rtErr := initializeWorkspaceRuntime(ctx, ws, project, emb, st, isBackgroundChild)
-		if rtErr != nil {
-			log.Printf("Warning: failed to initialize runtime for %s: %v", project.Name, rtErr)
-			continue
-		}
-
-		projectKey := canonicalPath(project.Path)
-		runtimes[projectKey] = runtime
-		watchers = append(watchers, w)
+	runtimes, watchers, initErr := initializeWorkspaceRuntimes(ctx, ws, emb, st, isBackgroundChild)
+	if initErr != nil {
+		return initErr
 	}
 
 	defer func() {
@@ -2639,16 +2752,7 @@ func runWorkspaceWatchForeground(logDir string, ws *config.Workspace) error {
 			w.Close()
 		}
 		for _, runtime := range runtimes {
-			if runtime.symbolStore != nil {
-				if err := runtime.symbolStore.Close(); err != nil {
-					log.Printf("Warning: failed to close symbol store for %s: %v", runtime.project.Path, err)
-				}
-			}
-			if runtime.rpgStore != nil {
-				if err := runtime.rpgStore.Close(); err != nil {
-					log.Printf("Warning: failed to close RPG store for %s: %v", runtime.project.Path, err)
-				}
-			}
+			closeWorkspaceRuntimeStores(runtime)
 		}
 	}()
 
@@ -2795,15 +2899,64 @@ type workspaceProjectRuntime struct {
 	watcher         *watcher.Watcher
 }
 
+// initializeWorkspaceRuntimes initializes every selected project of the
+// workspace. Any selected project failure aborts startup with the project,
+// stage and reason named — a selected project must never be silently skipped:
+// the previous warning+continue behavior left a watcher running green with a
+// project missing from the index. Already-initialized stores and watchers are
+// released before returning.
+func initializeWorkspaceRuntimes(ctx context.Context, ws *config.Workspace, emb embedder.Embedder, st store.VectorStore, isBackgroundChild bool) (map[string]*workspaceProjectRuntime, []*watcher.Watcher, error) {
+	runtimes := make(map[string]*workspaceProjectRuntime, len(ws.Projects))
+	watchers := make([]*watcher.Watcher, 0, len(ws.Projects))
+	for _, project := range ws.Projects {
+		if !isBackgroundChild {
+			fmt.Printf("\nIndexing project: %s (%s)\n", project.Name, project.Path)
+		} else {
+			log.Printf("Indexing project: %s (%s)", project.Name, project.Path)
+		}
+
+		runtime, w, rtErr := initializeWorkspaceRuntime(ctx, ws, project, emb, st, isBackgroundChild)
+		if rtErr != nil {
+			for _, open := range watchers {
+				open.Close()
+			}
+			for _, open := range runtimes {
+				closeWorkspaceRuntimeStores(open)
+			}
+			return nil, nil, fmt.Errorf("workspace %q project %q failed to initialize: %w", ws.Name, project.Name, rtErr)
+		}
+		runtimes[canonicalPath(project.Path)] = runtime
+		watchers = append(watchers, w)
+	}
+	return runtimes, watchers, nil
+}
+
+// closeWorkspaceRuntimeStores releases per-project stores with best-effort
+// warnings; shutdown paths may warn, startup paths may not.
+func closeWorkspaceRuntimeStores(rt *workspaceProjectRuntime) {
+	if rt.symbolStore != nil {
+		if err := rt.symbolStore.Close(); err != nil {
+			log.Printf("Warning: failed to close symbol store for %s: %v", rt.project.Path, err)
+		}
+	}
+	if rt.rpgStore != nil {
+		if err := rt.rpgStore.Close(); err != nil {
+			log.Printf("Warning: failed to close RPG store for %s: %v", rt.project.Path, err)
+		}
+	}
+}
+
 func initializeWorkspaceRuntime(ctx context.Context, ws *config.Workspace, project config.ProjectEntry, emb embedder.Embedder, sharedStore store.VectorStore, isBackgroundChild bool) (*workspaceProjectRuntime, *watcher.Watcher, error) {
 	projectCfg := config.DefaultConfig()
 	if config.Exists(project.Path) {
 		loadedCfg, err := config.Load(project.Path)
 		if err != nil {
-			log.Printf("Warning: failed to load config for %s, using defaults: %v", project.Name, err)
-		} else {
-			projectCfg = loadedCfg
+			// A present-but-broken project config must not be silently
+			// replaced by defaults: defaults change the ignore face, chunking
+			// and RPG behavior of a selected project.
+			return nil, nil, fmt.Errorf("config stage: failed to load project config: %w", err)
 		}
+		projectCfg = loadedCfg
 	}
 
 	ignoreMatcher, err := indexer.NewIgnoreMatcher(project.Path, projectCfg.Ignore, projectCfg.ExternalGitignore)
@@ -2828,19 +2981,19 @@ func initializeWorkspaceRuntime(ctx context.Context, ws *config.Workspace, proje
 	if ws.Store.Backend == "postgres" && ws.Store.Postgres.DSN != "" {
 		// Postgres-backed workspaces keep the symbol index in the shared
 		// store so other hosts can serve trace/refs queries without the
-		// project files locally.
+		// project files locally. A Postgres failure must abort, not degrade
+		// to a local GOB store that serving hosts would never see.
 		pgStore, pgErr := trace.NewPostgresSymbolStore(ctx, ws.Store.Postgres.DSN, ws.Name, project.Name)
 		if pgErr != nil {
-			log.Printf("Warning: failed to create postgres symbol store for %s: %v", project.Name, pgErr)
-			symbolStore = trace.NewGOBSymbolStore(config.GetSymbolIndexPath(project.Path))
-		} else {
-			symbolStore = pgStore
+			return nil, nil, fmt.Errorf("symbol store stage: failed to create postgres symbol store: %w", pgErr)
 		}
+		symbolStore = pgStore
 	} else {
 		symbolStore = trace.NewGOBSymbolStore(config.GetSymbolIndexPath(project.Path))
 	}
 	if err := symbolStore.Load(ctx); err != nil {
-		log.Printf("Warning: failed to load symbol index for %s: %v", project.Path, err)
+		_ = symbolStore.Close()
+		return nil, nil, fmt.Errorf("symbol store stage: failed to load symbol index: %w", err)
 	}
 
 	tracedLanguages := projectCfg.Trace.EnabledLanguages
@@ -2848,15 +3001,18 @@ func initializeWorkspaceRuntime(ctx context.Context, ws *config.Workspace, proje
 		tracedLanguages = config.DefaultConfig().Trace.EnabledLanguages
 	}
 
-	stats, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, tracedLanguages, projectCfg.Watch.LastIndexTime, isBackgroundChild, nil, nil, processorRegistry)
+	stats, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, tracedLanguages, projectCfg.Watch.LastIndexTime, isBackgroundChild, nil, nil, true, processorRegistry)
 	if err != nil {
 		_ = symbolStore.Close()
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("initial scan stage: %w", err)
 	}
 	if stats.FilesIndexed > 0 || stats.ChunksCreated > 0 {
 		projectCfg.Watch.LastIndexTime = time.Now()
 		if err := projectCfg.Save(project.Path); err != nil {
-			log.Printf("Warning: failed to save config for %s: %v", project.Name, err)
+			// Losing the mtime bookkeeping silently would make every watcher
+			// recycle re-embed the same files and report fake churn.
+			_ = symbolStore.Close()
+			return nil, nil, fmt.Errorf("config stage: failed to save last_index_time bookkeeping: %w", err)
 		}
 	}
 
@@ -2867,33 +3023,37 @@ func initializeWorkspaceRuntime(ctx context.Context, ws *config.Workspace, proje
 		if ws.Store.Backend == "postgres" && ws.Store.Postgres.DSN != "" {
 			pgStore, pgErr := rpg.NewPostgresRPGStore(ctx, ws.Store.Postgres.DSN, ws.Name, project.Name)
 			if pgErr != nil {
-				log.Printf("Warning: failed to create postgres RPG store for %s: %v", project.Name, pgErr)
-				rpgStore = rpg.NewGOBRPGStore(config.GetRPGIndexPath(project.Path))
-			} else {
-				rpgStore = pgStore
+				_ = symbolStore.Close()
+				return nil, nil, fmt.Errorf("rpg stage: failed to create postgres RPG store: %w", pgErr)
 			}
+			rpgStore = pgStore
 		} else {
 			rpgStore = rpg.NewGOBRPGStore(config.GetRPGIndexPath(project.Path))
 		}
 		if err := rpgStore.Load(ctx); err != nil {
-			log.Printf("Warning: failed to load RPG index for %s: %v", project.Path, err)
+			_ = rpgStore.Close()
+			_ = symbolStore.Close()
+			return nil, nil, fmt.Errorf("rpg stage: failed to load RPG index: %w", err)
 		}
 
 		var featureExtractor rpg.FeatureExtractor
 		switch projectCfg.RPG.FeatureMode {
 		case "llm", "hybrid":
 			if projectCfg.RPG.LLMEndpoint == "" || projectCfg.RPG.LLMModel == "" {
-				log.Printf("Warning: RPG feature_mode=%q but llm_endpoint or llm_model is empty for %s, falling back to local extractor", projectCfg.RPG.FeatureMode, project.Path)
-				featureExtractor = rpg.NewLocalExtractor()
-			} else {
-				featureExtractor = rpg.NewLLMExtractor(rpg.LLMExtractorConfig{
-					Provider: projectCfg.RPG.LLMProvider,
-					Model:    projectCfg.RPG.LLMModel,
-					Endpoint: projectCfg.RPG.LLMEndpoint,
-					APIKey:   projectCfg.RPG.LLMAPIKey,
-					Timeout:  time.Duration(projectCfg.RPG.LLMTimeoutMs) * time.Millisecond,
-				})
+				// feature_mode is an explicit operator choice; silently
+				// swapping in the local extractor would change RPG semantics
+				// without anyone asking for it.
+				_ = rpgStore.Close()
+				_ = symbolStore.Close()
+				return nil, nil, fmt.Errorf("rpg stage: feature_mode=%q requires llm_endpoint and llm_model", projectCfg.RPG.FeatureMode)
 			}
+			featureExtractor = rpg.NewLLMExtractor(rpg.LLMExtractorConfig{
+				Provider: projectCfg.RPG.LLMProvider,
+				Model:    projectCfg.RPG.LLMModel,
+				Endpoint: projectCfg.RPG.LLMEndpoint,
+				APIKey:   projectCfg.RPG.LLMAPIKey,
+				Timeout:  time.Duration(projectCfg.RPG.LLMTimeoutMs) * time.Millisecond,
+			})
 		default:
 			featureExtractor = rpg.NewLocalExtractor()
 		}
@@ -2904,16 +3064,19 @@ func initializeWorkspaceRuntime(ctx context.Context, ws *config.Workspace, proje
 			FeatureGroupStrategy: projectCfg.RPG.FeatureGroupStrategy,
 		})
 		if err := rpgEncoder.BuildFull(ctx, symbolStore, vectorStore, nil); err != nil {
-			log.Printf("Warning: failed to build RPG graph for %s: %v", project.Path, err)
-		} else {
-			// Align with the single-project path's success line so operators
-			// can confirm the workspace graph is populated, not silently
-			// empty.
-			buildStats := rpgEncoder.Stats()
-			log.Printf("RPG graph built for workspace:%s/%s: %d nodes, %d edges", ws.Name, project.Name, buildStats.TotalNodes, buildStats.TotalEdges)
+			_ = rpgStore.Close()
+			_ = symbolStore.Close()
+			return nil, nil, fmt.Errorf("rpg stage: failed to build RPG graph: %w", err)
 		}
+		// Align with the single-project path's success line so operators
+		// can confirm the workspace graph is populated, not silently
+		// empty.
+		buildStats := rpgEncoder.Stats()
+		log.Printf("RPG graph built for workspace:%s/%s: %d nodes, %d edges", ws.Name, project.Name, buildStats.TotalNodes, buildStats.TotalEdges)
 		if err := rpgStore.Persist(ctx); err != nil {
-			log.Printf("Warning: failed to persist RPG graph for %s: %v", project.Path, err)
+			_ = rpgStore.Close()
+			_ = symbolStore.Close()
+			return nil, nil, fmt.Errorf("rpg stage: failed to persist RPG graph: %w", err)
 		}
 
 		manager = newRPGRealtimeManager(projectCfg.Watch.RPGMaxDirtyFilesPerBatch)

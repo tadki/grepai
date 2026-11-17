@@ -38,24 +38,38 @@ func LoadLocalRPGForRoot(ctx context.Context, projectRoot string) (RPGStore, *Qu
 	return store, NewQueryEngine(store.GetGraph()), nil
 }
 
+// ScopeSelection describes which workspace/project an RPG scope resolution
+// picked. When the caller omitted the project name the choice is implicit and
+// consumers must disclose it (MCP response field, CLI stderr line) so agents
+// never mistake one project's graph for a workspace-wide view.
+type ScopeSelection struct {
+	Workspace string
+	Project   string
+	// Implicit is true when the project was chosen by the loader (omitted
+	// project parameter), not by the caller.
+	Implicit bool
+}
+
 // LoadWorkspaceRPG loads the RPG store of the first workspace project (or the
 // explicitly named project) that has RPG enabled and a non-empty index.
 // Shared by the CLI and the MCP server so both modes read through one code
 // path. Invalid workspace/project names are reported verbatim so callers can
 // surface clean errors; ErrRPGIndexEmpty means "nothing loadable". When no
 // project is named on a multi-project workspace, the first non-empty project
-// wins (established MCP semantics) and the implicit choice is logged.
-func LoadWorkspaceRPG(ctx context.Context, workspaceName, projectName string) (RPGStore, *QueryEngine, error) {
+// wins (established MCP semantics); the returned ScopeSelection.Implicit flag
+// marks that pick so callers can disclose it in their output — the log line
+// alone is not machine-visible to MCP clients.
+func LoadWorkspaceRPG(ctx context.Context, workspaceName, projectName string) (RPGStore, *QueryEngine, *ScopeSelection, error) {
 	wsCfg, err := config.LoadWorkspaceConfig()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load workspace config: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to load workspace config: %w", err)
 	}
 	if wsCfg == nil {
-		return nil, nil, ErrRPGIndexEmpty
+		return nil, nil, nil, ErrRPGIndexEmpty
 	}
 	ws, err := wsCfg.GetWorkspace(workspaceName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to resolve workspace %q: %w", workspaceName, err)
+		return nil, nil, nil, fmt.Errorf("failed to resolve workspace %q: %w", workspaceName, err)
 	}
 
 	projects := ws.Projects
@@ -69,7 +83,7 @@ func LoadWorkspaceRPG(ctx context.Context, workspaceName, projectName string) (R
 			}
 		}
 		if !found {
-			return nil, nil, fmt.Errorf("project %q not found in workspace %q", projectName, workspaceName)
+			return nil, nil, nil, fmt.Errorf("project %q not found in workspace %q", projectName, workspaceName)
 		}
 	}
 
@@ -126,24 +140,25 @@ func LoadWorkspaceRPG(ctx context.Context, workspaceName, projectName string) (R
 			}
 			continue
 		}
-		if len(ws.Projects) > 1 && projectName == "" {
+		implicit := projectName == ""
+		if implicit && len(ws.Projects) > 1 {
 			// CLI callers write log lines to stderr; MCP callers route them
 			// to the server log — either way the implicit project choice
 			// must be visible to the operator.
 			log.Printf("workspace %q has multiple projects; serving %q (first non-empty RPG index)", workspaceName, p.Name)
 		}
-		return store, NewQueryEngine(store.GetGraph()), nil
+		return store, NewQueryEngine(store.GetGraph()), &ScopeSelection{Workspace: workspaceName, Project: p.Name, Implicit: implicit}, nil
 	}
 	if pgFailure != nil {
 		// A backend failure is a reachability problem, not "nothing to
 		// read" — surface it so the CLI can report cleanly and auto mode can
 		// decide whether to degrade.
-		return nil, nil, fmt.Errorf("workspace %q postgres store failed: %w", workspaceName, pgFailure)
+		return nil, nil, nil, fmt.Errorf("workspace %q postgres store failed: %w", workspaceName, pgFailure)
 	}
 	if outdated {
-		return nil, nil, ErrRPGIndexOutdated
+		return nil, nil, nil, ErrRPGIndexOutdated
 	}
-	return nil, nil, ErrRPGIndexEmpty
+	return nil, nil, nil, ErrRPGIndexEmpty
 }
 
 // LoadRPGForScope resolves which RPG index a query reads. An explicit
@@ -151,42 +166,52 @@ func LoadWorkspaceRPG(ctx context.Context, workspaceName, projectName string) (R
 // Without one, the current project is attributed to a configured workspace:
 // postgres-backed membership reads the shared store (degrading to the local
 // gob with a stderr warning when postgres is unreachable), and everything
-// else keeps the single-project gob behavior.
-func LoadRPGForScope(ctx context.Context, workspaceName, projectName string) (RPGStore, *QueryEngine, error) {
+// else keeps the single-project gob behavior. A path claimed by multiple
+// workspaces fails loud — owning-workspace inference never guesses.
+func LoadRPGForScope(ctx context.Context, workspaceName, projectName string) (RPGStore, *QueryEngine, *ScopeSelection, error) {
 	if workspaceName != "" {
 		return LoadWorkspaceRPG(ctx, workspaceName, projectName)
 	}
 
 	projectRoot, err := config.FindProjectRoot()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	wsCfg, wsErr := config.LoadWorkspaceConfig()
 	if wsErr != nil {
 		log.Printf("Warning: failed to load workspace config, using local RPG index: %v", wsErr)
-		return LoadLocalRPGForRoot(ctx, projectRoot)
+		store, qe, lErr := LoadLocalRPGForRoot(ctx, projectRoot)
+		return store, qe, nil, lErr
 	}
 	if wsCfg == nil {
-		return LoadLocalRPGForRoot(ctx, projectRoot)
+		store, qe, lErr := LoadLocalRPGForRoot(ctx, projectRoot)
+		return store, qe, nil, lErr
 	}
-	ws, proj, ok := wsCfg.FindOwningWorkspace(projectRoot)
+	ws, proj, ok, wsErr := wsCfg.FindOwningWorkspace(projectRoot)
+	if wsErr != nil {
+		// Ambiguous ownership is a configuration error, not a reason to
+		// silently read a random workspace's graph — surface it.
+		return nil, nil, nil, wsErr
+	}
 	if !ok || ws.Store.Backend != "postgres" || ws.Store.Postgres.DSN == "" {
-		return LoadLocalRPGForRoot(ctx, projectRoot)
+		store, qe, lErr := LoadLocalRPGForRoot(ctx, projectRoot)
+		return store, qe, nil, lErr
 	}
 
-	store, qe, err := LoadWorkspaceRPG(ctx, ws.Name, proj.Name)
+	store, qe, sel, err := LoadWorkspaceRPG(ctx, ws.Name, proj.Name)
 	if err == nil {
-		return store, qe, nil
+		return store, qe, sel, nil
 	}
 	if errors.Is(err, ErrRPGIndexEmpty) || errors.Is(err, ErrRPGIndexOutdated) {
 		// The shared store answered: it genuinely has nothing (yet) for this
 		// project. Not a reachability problem — do not silently substitute a
 		// possibly stale local graph.
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	// Postgres unreachable (or otherwise failing): degrade to the local gob
 	// so the query still answers, with a visible warning that the graph may
 	// be stale.
 	log.Printf("Warning: workspace %q postgres unavailable, falling back to local RPG index: %v", ws.Name, err)
-	return LoadLocalRPGForRoot(ctx, projectRoot)
+	store, qe, lErr := LoadLocalRPGForRoot(ctx, projectRoot)
+	return store, qe, nil, lErr
 }

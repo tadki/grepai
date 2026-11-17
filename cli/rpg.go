@@ -151,14 +151,19 @@ func validateRPGWorkspaceFlags() error {
 
 // loadRPGStore resolves the RPG store through the shared dual-mode loader:
 // explicit --workspace reads the workspace scope, otherwise cwd attribution
-// picks the shared (postgres) store or the local single-project gob.
+// picks the shared (postgres) store or the local single-project gob. An
+// implicit project pick (omitted --project on a workspace) is announced on
+// stderr so CLI users know which project's graph answered.
 func loadRPGStore(ctx context.Context) (rpg.RPGStore, *rpg.QueryEngine, error) {
-	store, qe, err := rpg.LoadRPGForScope(ctx, rpgWorkspace, rpgProject)
+	store, qe, sel, err := rpg.LoadRPGForScope(ctx, rpgWorkspace, rpgProject)
 	if errors.Is(err, rpg.ErrRPGIndexOutdated) {
 		return nil, nil, fmt.Errorf("RPG index is outdated; run 'grepai watch' to rebuild")
 	}
 	if err != nil {
 		return nil, nil, err
+	}
+	if sel != nil && sel.Implicit {
+		fmt.Fprintf(os.Stderr, "note: no --project given; serving workspace %q project %q (implicit pick — pass --project to target one project)\n", sel.Workspace, sel.Project)
 	}
 	return store, qe, nil
 }
