@@ -68,8 +68,8 @@ func TestFindOwningWorkspaceAmbiguous(t *testing.T) {
 	cfg := DefaultWorkspaceConfig()
 	for _, name := range []string{"zeta", "alpha"} {
 		if err := cfg.AddWorkspace(Workspace{
-			Name:    name,
-			Store:   StoreConfig{Backend: "postgres", Postgres: PostgresConfig{DSN: "postgres://localhost:5432/" + name}},
+			Name:     name,
+			Store:    StoreConfig{Backend: "postgres", Postgres: PostgresConfig{DSN: "postgres://localhost:5432/" + name}},
 			Projects: []ProjectEntry{{Name: name + "-proj", Path: shared}},
 		}); err != nil {
 			t.Fatalf("AddWorkspace(%s): %v", name, err)
@@ -104,8 +104,8 @@ func TestFindOwningWorkspaceExplicit(t *testing.T) {
 	cfg := DefaultWorkspaceConfig()
 	for _, name := range []string{"zeta", "alpha"} {
 		if err := cfg.AddWorkspace(Workspace{
-			Name:    name,
-			Store:   StoreConfig{Backend: "postgres", Postgres: PostgresConfig{DSN: "postgres://localhost:5432/" + name}},
+			Name:     name,
+			Store:    StoreConfig{Backend: "postgres", Postgres: PostgresConfig{DSN: "postgres://localhost:5432/" + name}},
 			Projects: []ProjectEntry{{Name: name + "-proj", Path: shared}},
 		}); err != nil {
 			t.Fatalf("AddWorkspace(%s): %v", name, err)
@@ -130,15 +130,15 @@ func TestFindOwningWorkspaceExplicit(t *testing.T) {
 func TestFindOwningWorkspaceSingle(t *testing.T) {
 	cfg := DefaultWorkspaceConfig()
 	if err := cfg.AddWorkspace(Workspace{
-		Name:    "solo",
-		Store:   StoreConfig{Backend: "postgres", Postgres: PostgresConfig{DSN: "postgres://localhost:5432/solo"}},
+		Name:     "solo",
+		Store:    StoreConfig{Backend: "postgres", Postgres: PostgresConfig{DSN: "postgres://localhost:5432/solo"}},
 		Projects: []ProjectEntry{{Name: "solo-proj", Path: "/only/path"}},
 	}); err != nil {
 		t.Fatalf("AddWorkspace: %v", err)
 	}
 	if err := cfg.AddWorkspace(Workspace{
-		Name:    "other",
-		Store:   StoreConfig{Backend: "postgres", Postgres: PostgresConfig{DSN: "postgres://localhost:5432/other"}},
+		Name:     "other",
+		Store:    StoreConfig{Backend: "postgres", Postgres: PostgresConfig{DSN: "postgres://localhost:5432/other"}},
 		Projects: []ProjectEntry{{Name: "other-proj", Path: "/different/path"}},
 	}); err != nil {
 		t.Fatalf("AddWorkspace: %v", err)
@@ -158,8 +158,8 @@ func TestFindWorkspaceForPathAmbiguous(t *testing.T) {
 	cfg := DefaultWorkspaceConfig()
 	for _, name := range []string{"zeta", "alpha"} {
 		if err := cfg.AddWorkspace(Workspace{
-			Name:    name,
-			Store:   StoreConfig{Backend: "postgres", Postgres: PostgresConfig{DSN: "postgres://localhost:5432/" + name}},
+			Name:     name,
+			Store:    StoreConfig{Backend: "postgres", Postgres: PostgresConfig{DSN: "postgres://localhost:5432/" + name}},
 			Projects: []ProjectEntry{{Name: name + "-proj", Path: "/shared/root"}},
 		}); err != nil {
 			t.Fatalf("AddWorkspace(%s): %v", name, err)

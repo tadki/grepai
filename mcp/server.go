@@ -2357,10 +2357,10 @@ func rpgImplicitDisclosure(sel *rpg.ScopeSelection, key string, payload any) (an
 	}
 	return map[string]any{
 		"scope": map[string]any{
-			"workspace":   sel.Workspace,
-			"project":     sel.Project,
-			"implicit":    true,
-			"disclosure":  "no project parameter was given; the server picked this project implicitly (first non-empty RPG index). Pass project explicitly to target a specific project.",
+			"workspace":  sel.Workspace,
+			"project":    sel.Project,
+			"implicit":   true,
+			"disclosure": "no project parameter was given; the server picked this project implicitly (first non-empty RPG index). Pass project explicitly to target a specific project.",
 		},
 		key: payload,
 	}, true

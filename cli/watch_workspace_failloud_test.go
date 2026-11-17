@@ -97,8 +97,8 @@ func TestWorkspaceWatchSelectedRPGFeatureModeFail(t *testing.T) {
 	// GOB-backed workspace so the symbol store stage succeeds and the failure
 	// lands on the RPG configuration itself.
 	ws := &config.Workspace{
-		Name: "ws-rpg",
-		Store: config.StoreConfig{Backend: "qdrant"},
+		Name:     "ws-rpg",
+		Store:    config.StoreConfig{Backend: "qdrant"},
 		Projects: []config.ProjectEntry{{Name: "rpg-proj", Path: proj}},
 	}
 

@@ -324,13 +324,13 @@ func TestStatusModelTokenSavingsView(t *testing.T) {
 		t.Fatalf("load cfg: %v", err)
 	}
 	summary := stats.Summarize([]stats.Entry{{
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		CommandType: "search", OutputMode: "full",
 		ResultCount: 1, OutputTokens: 50, GrepTokens: 400,
 	}}, "ollama")
 	m := model{
 		st: gob, cfg: cfg, width: 100, height: 30,
-		stats: &store.IndexStats{TotalFiles: 1, TotalChunks: 1},
+		stats:          &store.IndexStats{TotalFiles: 1, TotalChunks: 1},
 		savingsSummary: &summary,
 	}
 	m.state = viewTokenSavings
@@ -364,5 +364,3 @@ func TestStatusModelTokenSavingsView(t *testing.T) {
 		t.Fatal("chunks view must render")
 	}
 }
-
-

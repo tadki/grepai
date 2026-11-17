@@ -143,4 +143,3 @@ func TestBuildWorkspacePathValidationErrorShapes(t *testing.T) {
 		t.Fatalf("missing reason: %s", msg)
 	}
 }
-

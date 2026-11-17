@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yoanbernabeu/grepai/trace"
 	"github.com/spf13/cobra"
 	"github.com/yoanbernabeu/grepai/config"
-	"github.com/yoanbernabeu/grepai/indexer"
 	"github.com/yoanbernabeu/grepai/daemon"
+	"github.com/yoanbernabeu/grepai/indexer"
 	"github.com/yoanbernabeu/grepai/rpg"
 	"github.com/yoanbernabeu/grepai/store"
+	"github.com/yoanbernabeu/grepai/trace"
 )
 
 // ---- shared stubs ----
@@ -420,8 +420,8 @@ func TestRuntimeInitConfigSaveFail(t *testing.T) {
 // failingCloseRPGStore delegates to a real store but fails Close.
 type failingCloseRPGStore struct{ inner rpg.RPGStore }
 
-func (f *failingCloseRPGStore) GetGraph() *rpg.Graph             { return f.inner.GetGraph() }
-func (f *failingCloseRPGStore) Load(ctx context.Context) error   { return f.inner.Load(ctx) }
+func (f *failingCloseRPGStore) GetGraph() *rpg.Graph              { return f.inner.GetGraph() }
+func (f *failingCloseRPGStore) Load(ctx context.Context) error    { return f.inner.Load(ctx) }
 func (f *failingCloseRPGStore) Persist(ctx context.Context) error { return f.inner.Persist(ctx) }
 func (f *failingCloseRPGStore) GetStats(ctx context.Context) (*rpg.GraphStats, error) {
 	stats := f.inner.GetGraph().Stats()
