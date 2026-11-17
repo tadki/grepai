@@ -106,7 +106,7 @@ func TestRunInitialScan_SkipsSymbolExtractionWhenContentHashMatches(t *testing.T
 		t.Fatalf("failed to seed symbol store: %v", err)
 	}
 
-	if _, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, []string{".go"}, time.Time{}, true, nil, nil); err != nil {
+	if _, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, []string{".go"}, time.Time{}, true, nil, nil, false); err != nil {
 		t.Fatalf("runInitialScan failed: %v", err)
 	}
 
@@ -179,7 +179,7 @@ func TestRunInitialScan_SkipsIndexedFileByLastIndexTime(t *testing.T) {
 	}
 
 	lastIndexTime := time.Now().Add(1 * time.Hour)
-	if _, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, []string{".go"}, lastIndexTime, true, nil, nil); err != nil {
+	if _, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, []string{".go"}, lastIndexTime, true, nil, nil, false); err != nil {
 		t.Fatalf("runInitialScan failed: %v", err)
 	}
 
@@ -624,7 +624,7 @@ func TestRunInitialScan_ReExtractsWhenExtractorVersionDiffers(t *testing.T) {
 	}
 
 	extractor := trace.NewRegexExtractor()
-	if _, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, []string{".go"}, time.Time{}, true, nil, nil); err != nil {
+	if _, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, []string{".go"}, time.Time{}, true, nil, nil, false); err != nil {
 		t.Fatalf("runInitialScan failed: %v", err)
 	}
 
@@ -692,7 +692,7 @@ func TestRunInitialScan_ReExtractsWhenExtractorVersionIsMissing(t *testing.T) {
 	}
 
 	extractor := trace.NewRegexExtractor()
-	if _, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, []string{".go"}, time.Time{}, true, nil, nil); err != nil {
+	if _, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, []string{".go"}, time.Time{}, true, nil, nil, false); err != nil {
 		t.Fatalf("runInitialScan failed: %v", err)
 	}
 
@@ -767,7 +767,7 @@ func TestRunInitialScan_ReExtractsWhenMtimeFastPathHitsStaleVersion(t *testing.T
 	}
 
 	extractor := trace.NewRegexExtractor()
-	if _, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, []string{".go"}, lastIndexTime, true, nil, nil); err != nil {
+	if _, err := runInitialScan(ctx, idx, scanner, extractor, symbolStore, []string{".go"}, lastIndexTime, true, nil, nil, false); err != nil {
 		t.Fatalf("runInitialScan failed: %v", err)
 	}
 

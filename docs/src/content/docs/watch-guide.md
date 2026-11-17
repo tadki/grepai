@@ -339,7 +339,22 @@ grepai watch --workspace my-fullstack --status
 
 # Stop workspace watcher
 grepai watch --workspace my-fullstack --stop
+
+# Watch only selected projects (repeatable flag)
+grepai watch --workspace my-fullstack --project frontend --project api
 ```
+
+#### Selective Watching with `--project`
+
+`--project` is repeatable and filters the workspace's projects before any
+path existence check, so an unselected project with a missing path cannot
+block startup. Omitting `--project` keeps the default behavior of watching
+every project. Unknown or duplicate names fail with an error that lists the
+known project names, and `--project` requires `--workspace` — it is a
+workspace-scoped filter, not a standalone mode. Every selected project must
+initialize fully (config, store, embedder, symbols, RPG, initial scan) or
+the watcher exits with an error naming the project, stage and reason; a
+selected project is never silently skipped.
 
 #### How Workspace Watching Differs
 
@@ -349,7 +364,7 @@ grepai watch --workspace my-fullstack --stop
 | Store/embedder | Per-project settings | Shared workspace settings |
 | Chunking/ignore | Per-project | Per-project (each project keeps its own) |
 | File path format | `src/App.tsx` | `workspace/project/src/App.tsx` |
-| Symbol storage | `.grepai/symbols.gob` | Per-project `.grepai/symbols.gob` |
+| Symbol storage | `.grepai/symbols.gob` | Shared store for Postgres-backed workspaces; per-project `.grepai/symbols.gob` otherwise |
 | Log file | `grepai-watch.log` | `grepai-workspace-{name}.log` |
 
 #### Coexistence
