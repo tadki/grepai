@@ -65,12 +65,12 @@ func TestTryLoadWorkspaceRPG_should_map_empty_sentinel_to_nil(t *testing.T) {
 	}
 
 	s := &Server{}
-	st, qe, err := s.tryLoadWorkspaceRPG(context.Background(), "ws", "")
+	st, qe, _, err := s.tryLoadWorkspaceRPG(context.Background(), "ws", "")
 	if st != nil || qe != nil || err != nil {
 		t.Fatalf("empty workspace must map to nil enrichment, got st=%v err=%v", st, err)
 	}
 	// Unknown project fails clean inside the MCP layer too.
-	_, _, errGhost := s.tryLoadWorkspaceRPG(context.Background(), "ws", "ghost")
+	_, _, _, errGhost := s.tryLoadWorkspaceRPG(context.Background(), "ws", "ghost")
 	if errGhost == nil || !strings.Contains(errGhost.Error(), "not found") {
 		t.Fatalf("ghost project must fail clean, got %v", errGhost)
 	}
@@ -92,7 +92,7 @@ func TestTryLoadWorkspaceRPG_should_fail_clean_on_unknown_workspace(t *testing.T
 		t.Fatalf("save workspace config: %v", err)
 	}
 	s := &Server{}
-	_, _, err := s.tryLoadWorkspaceRPG(context.Background(), "ghost", "")
+	_, _, _, err := s.tryLoadWorkspaceRPG(context.Background(), "ghost", "")
 	if err == nil {
 		t.Fatal("unknown workspace must error")
 	}
@@ -103,7 +103,7 @@ func TestTryLoadRPGForScope_single_project_paths(t *testing.T) {
 	root := seedRPGProjectForMCP(t, base, "proj", "soloSolver")
 	s := &Server{projectRoot: root}
 
-	st, qe, err := s.tryLoadRPGForScope(context.Background(), "", "")
+	st, qe, _, err := s.tryLoadRPGForScope(context.Background(), "", "")
 	if err != nil || st == nil || qe == nil {
 		t.Fatalf("expected seeded graph, got st=%v err=%v", st, err)
 	}
@@ -128,14 +128,14 @@ func TestTryLoadRPGForScope_single_project_paths(t *testing.T) {
 		t.Fatalf("save config: %v", err)
 	}
 	s2 := &Server{projectRoot: disabledRoot}
-	st2, qe2, err := s2.tryLoadRPGForScope(context.Background(), "", "")
+	st2, qe2, _, err := s2.tryLoadRPGForScope(context.Background(), "", "")
 	if st2 != nil || qe2 != nil || err != nil {
 		t.Fatalf("disabled config must be nil-clean, got st=%v err=%v", st2, err)
 	}
 
 	// Empty project root is a nil no-op.
 	s3 := &Server{}
-	if st3, _, err := s3.tryLoadRPGForScope(context.Background(), "", ""); st3 != nil || err != nil {
+	if st3, _, _, err := s3.tryLoadRPGForScope(context.Background(), "", ""); st3 != nil || err != nil {
 		t.Fatalf("empty root must be no-op, got %v", err)
 	}
 }
@@ -191,7 +191,7 @@ func TestTryLoadWorkspaceRPG_postgres_failure_should_surface_error(t *testing.T)
 	}
 
 	s := &Server{}
-	st, qe, err := s.tryLoadWorkspaceRPG(context.Background(), "ws-pg-down", "")
+	st, qe, _, err := s.tryLoadWorkspaceRPG(context.Background(), "ws-pg-down", "")
 	if st != nil || qe != nil {
 		t.Fatalf("no store should be returned on backend failure, got st=%v qe=%v", st, qe)
 	}
@@ -237,7 +237,7 @@ func TestTryLoadWorkspaceRPG_outdated_gob_should_not_map_to_nil(t *testing.T) {
 	}
 
 	s := &Server{}
-	st, _, err := s.tryLoadWorkspaceRPG(context.Background(), "ws-stale", "")
+	st, _, _, err := s.tryLoadWorkspaceRPG(context.Background(), "ws-stale", "")
 	if st != nil {
 		t.Fatal("no store should be returned for an outdated index")
 	}

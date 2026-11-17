@@ -167,7 +167,7 @@ func NewServerWithWorkspace(projectRoot, workspaceName string) (*Server, error) 
 func (s *Server) registerTools() {
 	// grepai_search tool
 	searchTool := mcp.NewTool("grepai_search",
-		mcp.WithDescription("Semantic code search. Search your codebase using natural language queries. Returns the most relevant code chunks with file paths, line numbers, and similarity scores.\n\nExamples:\n- workspace-only mode: workspace='acme', path='src/'\n- workspace + projects mode: workspace='acme', projects='backend,shared', path='api/'"),
+		mcp.WithDescription("Semantic code search. Search your codebase using natural language queries. Returns the most relevant code chunks with file paths, line numbers, and similarity scores.\n\nWorkspace search is cross-project: without projects it spans every project of the workspace and result paths carry a <workspace>/<project>/ prefix; with projects=<name> results are scoped to those projects with paths relative to each project root. Omitted workspace resolves to the server default workspace (from mcp-serve --workspace).\n\nExamples:\n- workspace-only mode: workspace='acme', path='src/'\n- workspace + projects mode: workspace='acme', projects='backend,shared', path='api/'"),
 		mcp.WithString("query",
 			mcp.Required(),
 			mcp.Description("Natural language search query (e.g., 'user authentication flow', 'error handling middleware')"),
@@ -185,7 +185,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Path prefix to filter results, always relative to a project root — never a project name prefix (use 'src/', not 'myproject/src'). When projects is set, path is relative to each selected project root (not workspace root)."),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project search (optional; call grepai_list_workspaces first to discover valid names)"),
+			mcp.Description("Workspace name for cross-project search. When omitted, the server default workspace applies (from mcp-serve --workspace); if none is set, the workspace parameter must be provided (call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("projects",
 			mcp.Description("Comma-separated list of project names to search within workspace (requires workspace)"),
@@ -207,10 +207,10 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project trace (optional; call grepai_list_workspaces first to discover valid names)"),
+			mcp.Description("Workspace name for cross-project trace. When omitted, the server default workspace applies (from mcp-serve --workspace); if none is set, the workspace parameter must be provided (call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
-			mcp.Description("Project name within workspace (requires workspace)"),
+			mcp.Description("Project name within workspace (requires workspace). Pass it explicitly: trace/refs without project cover every project in the workspace, and RPG without project picks one implicitly and discloses the choice in the response scope field"),
 		),
 	)
 	s.mcpServer.AddTool(traceCallersTool, s.handleTraceCallers)
@@ -229,10 +229,10 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project trace (optional; call grepai_list_workspaces first to discover valid names)"),
+			mcp.Description("Workspace name for cross-project trace. When omitted, the server default workspace applies (from mcp-serve --workspace); if none is set, the workspace parameter must be provided (call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
-			mcp.Description("Project name within workspace (requires workspace)"),
+			mcp.Description("Project name within workspace (requires workspace). Pass it explicitly: trace/refs without project cover every project in the workspace, and RPG without project picks one implicitly and discloses the choice in the response scope field"),
 		),
 	)
 	s.mcpServer.AddTool(traceCalleesTool, s.handleTraceCallees)
@@ -254,10 +254,10 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project trace (optional; call grepai_list_workspaces first to discover valid names)"),
+			mcp.Description("Workspace name for cross-project trace. When omitted, the server default workspace applies (from mcp-serve --workspace); if none is set, the workspace parameter must be provided (call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
-			mcp.Description("Project name within workspace (requires workspace)"),
+			mcp.Description("Project name within workspace (requires workspace). Pass it explicitly: trace/refs without project cover every project in the workspace, and RPG without project picks one implicitly and discloses the choice in the response scope field"),
 		),
 	)
 	s.mcpServer.AddTool(traceGraphTool, s.handleTraceGraph)
@@ -275,10 +275,10 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project refs (optional; call grepai_list_workspaces first to discover valid names)"),
+			mcp.Description("Workspace name for cross-project refs. When omitted, the server default workspace applies (from mcp-serve --workspace); if none is set, the workspace parameter must be provided (call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
-			mcp.Description("Project name within workspace (requires workspace)"),
+			mcp.Description("Project name within workspace (requires workspace). Pass it explicitly: trace/refs without project cover every project in the workspace, and RPG without project picks one implicitly and discloses the choice in the response scope field"),
 		),
 	)
 	s.mcpServer.AddTool(refsReadersTool, s.handleRefsReaders)
@@ -296,10 +296,10 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project refs (optional; call grepai_list_workspaces first to discover valid names)"),
+			mcp.Description("Workspace name for cross-project refs. When omitted, the server default workspace applies (from mcp-serve --workspace); if none is set, the workspace parameter must be provided (call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
-			mcp.Description("Project name within workspace (requires workspace)"),
+			mcp.Description("Project name within workspace (requires workspace). Pass it explicitly: trace/refs without project cover every project in the workspace, and RPG without project picks one implicitly and discloses the choice in the response scope field"),
 		),
 	)
 	s.mcpServer.AddTool(refsWritersTool, s.handleRefsWriters)
@@ -317,10 +317,10 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project refs (optional; call grepai_list_workspaces first to discover valid names)"),
+			mcp.Description("Workspace name for cross-project refs. When omitted, the server default workspace applies (from mcp-serve --workspace); if none is set, the workspace parameter must be provided (call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
-			mcp.Description("Project name within workspace (requires workspace)"),
+			mcp.Description("Project name within workspace (requires workspace). Pass it explicitly: trace/refs without project cover every project in the workspace, and RPG without project picks one implicitly and discloses the choice in the response scope field"),
 		),
 	)
 	s.mcpServer.AddTool(refsGraphTool, s.handleRefsGraph)
@@ -333,7 +333,7 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name to check status for (optional; call grepai_list_workspaces first to discover valid names)"),
+			mcp.Description("Workspace name to check status for. When omitted, the server default workspace applies (from mcp-serve --workspace); call grepai_list_workspaces first to discover valid names"),
 		),
 	)
 	s.mcpServer.AddTool(indexStatusTool, s.handleIndexStatus)
@@ -351,7 +351,7 @@ func (s *Server) registerTools() {
 	listProjectsTool := mcp.NewTool("grepai_list_projects",
 		mcp.WithDescription("List all projects within a workspace. Use this to discover project names and file paths relative to their project roots, which informs how to use the --path parameter in grepai_search."),
 		mcp.WithString("workspace",
-			mcp.Description("Name of the workspace to list projects for (optional when mcp-serve was started with --workspace; call grepai_list_workspaces first to discover valid names)"),
+			mcp.Description("Name of the workspace to list projects for. When omitted, the server default workspace applies (from mcp-serve --workspace); call grepai_list_workspaces first to discover valid names"),
 		),
 		mcp.WithString("format",
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
@@ -379,10 +379,10 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project RPG query (optional; call grepai_list_workspaces first to discover valid names)"),
+			mcp.Description("Workspace name for cross-project RPG query. When omitted, the server default workspace applies (from mcp-serve --workspace); if none is set, the workspace parameter must be provided (call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
-			mcp.Description("Project name within workspace (requires workspace)"),
+			mcp.Description("Project name within workspace (requires workspace). Pass it explicitly: trace/refs without project cover every project in the workspace, and RPG without project picks one implicitly and discloses the choice in the response scope field"),
 		),
 	)
 	s.mcpServer.AddTool(rpgSearchTool, s.handleRPGSearch)
@@ -398,10 +398,10 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project RPG query (optional; call grepai_list_workspaces first to discover valid names)"),
+			mcp.Description("Workspace name for cross-project RPG query. When omitted, the server default workspace applies (from mcp-serve --workspace); if none is set, the workspace parameter must be provided (call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
-			mcp.Description("Project name within workspace (requires workspace)"),
+			mcp.Description("Project name within workspace (requires workspace). Pass it explicitly: trace/refs without project cover every project in the workspace, and RPG without project picks one implicitly and discloses the choice in the response scope field"),
 		),
 	)
 	s.mcpServer.AddTool(rpgFetchTool, s.handleRPGFetch)
@@ -429,10 +429,10 @@ func (s *Server) registerTools() {
 			mcp.Description("Output format: 'json' (default) or 'toon' (token-efficient)"),
 		),
 		mcp.WithString("workspace",
-			mcp.Description("Workspace name for cross-project RPG query (optional; call grepai_list_workspaces first to discover valid names)"),
+			mcp.Description("Workspace name for cross-project RPG query. When omitted, the server default workspace applies (from mcp-serve --workspace); if none is set, the workspace parameter must be provided (call grepai_list_workspaces first to discover valid names)"),
 		),
 		mcp.WithString("project",
-			mcp.Description("Project name within workspace (requires workspace)"),
+			mcp.Description("Project name within workspace (requires workspace). Pass it explicitly: trace/refs without project cover every project in the workspace, and RPG without project picks one implicitly and discloses the choice in the response scope field"),
 		),
 	)
 	s.mcpServer.AddTool(rpgExploreTool, s.handleRPGExplore)
@@ -528,7 +528,7 @@ func (s *Server) handleSearch(ctx context.Context, request mcp.CallToolRequest) 
 		symbolName  string
 	}
 	rpgData := make(map[int]rpgInfo)
-	rpgSt, qe, rpgErr := s.tryLoadRPG(ctx)
+	rpgSt, qe, _, rpgErr := s.tryLoadRPG(ctx)
 	if rpgErr != nil {
 		log.Printf("Warning: RPG enrichment unavailable: %v", rpgErr)
 	}
@@ -598,7 +598,7 @@ func (s *Server) handleSearch(ctx context.Context, request mcp.CallToolRequest) 
 func workspaceDiscoveryHint(names []string) string {
 	sorted := append([]string(nil), names...)
 	sort.Strings(sorted)
-	return fmt.Sprintf("Valid workspaces: %s — call grepai_list_workspaces to discover them", strings.Join(sorted, ", "))
+	return fmt.Sprintf("Valid workspaces: %s — call grepai_list_workspaces first to discover them", strings.Join(sorted, ", "))
 }
 
 // handleWorkspaceSearch handles workspace-level search via MCP.
@@ -2083,7 +2083,7 @@ func (s *Server) handleIndexStatus(ctx context.Context, request mcp.CallToolRequ
 	}
 
 	// Check RPG status
-	rpgSt, _, rpgErr := s.tryLoadRPG(ctx)
+	rpgSt, _, _, rpgErr := s.tryLoadRPG(ctx)
 	if rpgErr != nil && !errors.Is(rpgErr, rpg.ErrRPGIndexOutdated) {
 		log.Printf("Warning: failed to load RPG status: %v", rpgErr)
 	}
@@ -2301,7 +2301,7 @@ func formatBytes(b int64) string {
 }
 
 // tryLoadRPG attempts to load the RPG store. Returns nil values if RPG is disabled or unavailable.
-func (s *Server) tryLoadRPG(ctx context.Context) (rpg.RPGStore, *rpg.QueryEngine, error) {
+func (s *Server) tryLoadRPG(ctx context.Context) (rpg.RPGStore, *rpg.QueryEngine, *rpg.ScopeSelection, error) {
 	return s.tryLoadRPGForScope(ctx, "", "")
 }
 
@@ -2312,24 +2312,24 @@ func (s *Server) tryLoadRPG(ctx context.Context) (rpg.RPGStore, *rpg.QueryEngine
 // workspace, the server's own project root is used (single-project mode).
 // Both paths go through the shared loaders in rpg/scope.go so the CLI and the
 // MCP server read through one code path.
-func (s *Server) tryLoadRPGForScope(ctx context.Context, workspaceName, projectName string) (rpg.RPGStore, *rpg.QueryEngine, error) {
+func (s *Server) tryLoadRPGForScope(ctx context.Context, workspaceName, projectName string) (rpg.RPGStore, *rpg.QueryEngine, *rpg.ScopeSelection, error) {
 	if workspaceName != "" {
 		return s.tryLoadWorkspaceRPG(ctx, workspaceName, projectName)
 	}
 	if s.projectRoot == "" {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	store, qe, err := rpg.LoadLocalRPGForRoot(ctx, s.projectRoot)
 	if errors.Is(err, rpg.ErrRPGIndexEmpty) {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
-	return store, qe, err
+	return store, qe, nil, err
 }
 
 // tryLoadWorkspaceRPG maps the shared loader's sentinels to the MCP-facing
 // contract: a disabled/empty workspace yields no enrichment (nil), not an
 // error.
-func (s *Server) tryLoadWorkspaceRPG(ctx context.Context, workspaceName, projectName string) (rpg.RPGStore, *rpg.QueryEngine, error) {
+func (s *Server) tryLoadWorkspaceRPG(ctx context.Context, workspaceName, projectName string) (rpg.RPGStore, *rpg.QueryEngine, *rpg.ScopeSelection, error) {
 	// Pre-resolve the workspace so an unknown name fails with the
 	// self-correcting discovery hint, matching the other workspace MCP
 	// paths; without a config (or on read errors) fall through and let the
@@ -2337,14 +2337,33 @@ func (s *Server) tryLoadWorkspaceRPG(ctx context.Context, workspaceName, project
 	wsCfg, cfgErr := config.LoadWorkspaceConfig()
 	if cfgErr == nil && wsCfg != nil {
 		if _, wsErr := wsCfg.GetWorkspace(workspaceName); wsErr != nil {
-			return nil, nil, fmt.Errorf("workspace not found: %v. %s", wsErr, workspaceDiscoveryHint(wsCfg.ListWorkspaces()))
+			return nil, nil, nil, fmt.Errorf("workspace not found: %v. %s", wsErr, workspaceDiscoveryHint(wsCfg.ListWorkspaces()))
 		}
 	}
-	store, qe, err := rpg.LoadWorkspaceRPG(ctx, workspaceName, projectName)
+	store, qe, sel, err := rpg.LoadWorkspaceRPG(ctx, workspaceName, projectName)
 	if err != nil && errors.Is(err, rpg.ErrRPGIndexEmpty) {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
-	return store, qe, err
+	return store, qe, sel, err
+}
+
+// rpgImplicitDisclosure wraps an RPG payload with the implicit-scope
+// disclosure when the loader picked a project the caller did not name. The
+// wrapper is additive: an explicit project call keeps the historical payload
+// shape.
+func rpgImplicitDisclosure(sel *rpg.ScopeSelection, key string, payload any) (any, bool) {
+	if sel == nil || !sel.Implicit {
+		return nil, false
+	}
+	return map[string]any{
+		"scope": map[string]any{
+			"workspace":   sel.Workspace,
+			"project":     sel.Project,
+			"implicit":    true,
+			"disclosure":  "no project parameter was given; the server picked this project implicitly (first non-empty RPG index). Pass project explicitly to target a specific project.",
+		},
+		key: payload,
+	}, true
 }
 
 // handleRPGSearch handles the grepai_rpg_search tool call.
@@ -2367,7 +2386,7 @@ func (s *Server) handleRPGSearch(ctx context.Context, request mcp.CallToolReques
 	}
 
 	// Load RPG
-	rpgSt, qe, loadErr := s.tryLoadRPGForScope(ctx, workspace, project)
+	rpgSt, qe, sel, loadErr := s.tryLoadRPGForScope(ctx, workspace, project)
 	if errors.Is(loadErr, rpg.ErrRPGIndexOutdated) {
 		return mcp.NewToolResultError("RPG index is outdated; run 'grepai watch' to rebuild"), nil
 	}
@@ -2418,8 +2437,13 @@ func (s *Server) handleRPGSearch(ctx context.Context, request mcp.CallToolReques
 		return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
 	}
 
-	// Encode output
-	output, err := encodeOutput(results, format)
+	// Encode output; an implicit project pick must be disclosed in-band so
+	// the client can tell which project's graph answered.
+	payload := any(results)
+	if wrapped, disclosed := rpgImplicitDisclosure(sel, "results", results); disclosed {
+		payload = wrapped
+	}
+	output, err := encodeOutput(payload, format)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to encode results: %v", err)), nil
 	}
@@ -2444,7 +2468,7 @@ func (s *Server) handleRPGFetch(ctx context.Context, request mcp.CallToolRequest
 	}
 
 	// Load RPG
-	rpgSt, qe, loadErr := s.tryLoadRPGForScope(ctx, workspace, project)
+	rpgSt, qe, sel, loadErr := s.tryLoadRPGForScope(ctx, workspace, project)
 	if errors.Is(loadErr, rpg.ErrRPGIndexOutdated) {
 		return mcp.NewToolResultError("RPG index is outdated; run 'grepai watch' to rebuild"), nil
 	}
@@ -2466,8 +2490,12 @@ func (s *Server) handleRPGFetch(ctx context.Context, request mcp.CallToolRequest
 		return mcp.NewToolResultError(fmt.Sprintf("node not found: %s", nodeID)), nil
 	}
 
-	// Encode output
-	output, err := encodeOutput(result, format)
+	// Encode output; implicit project pick disclosed in-band.
+	payload := any(result)
+	if wrapped, disclosed := rpgImplicitDisclosure(sel, "result", result); disclosed {
+		payload = wrapped
+	}
+	output, err := encodeOutput(payload, format)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to encode result: %v", err)), nil
 	}
@@ -2501,7 +2529,7 @@ func (s *Server) handleRPGExplore(ctx context.Context, request mcp.CallToolReque
 	}
 
 	// Load RPG
-	rpgSt, qe, loadErr := s.tryLoadRPGForScope(ctx, workspace, project)
+	rpgSt, qe, sel, loadErr := s.tryLoadRPGForScope(ctx, workspace, project)
 	if errors.Is(loadErr, rpg.ErrRPGIndexOutdated) {
 		return mcp.NewToolResultError("RPG index is outdated; run 'grepai watch' to rebuild"), nil
 	}
@@ -2557,8 +2585,12 @@ func (s *Server) handleRPGExplore(ctx context.Context, request mcp.CallToolReque
 		return mcp.NewToolResultError(fmt.Sprintf("start node not found: %s", startNodeID)), nil
 	}
 
-	// Encode output
-	output, err := encodeOutput(result, format)
+	// Encode output; implicit project pick disclosed in-band.
+	payload := any(result)
+	if wrapped, disclosed := rpgImplicitDisclosure(sel, "result", result); disclosed {
+		payload = wrapped
+	}
+	output, err := encodeOutput(payload, format)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to encode result: %v", err)), nil
 	}

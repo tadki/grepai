@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yoanbernabeu/grepai/config"
+	"github.com/yoanbernabeu/grepai/trace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -223,18 +225,71 @@ func runWorkspaceStatus(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// workspaceStoreProbe reports whether a project's shared-store data is
+// present. Production wires it to the postgres symbol store; tests replace it
+// to avoid real backends.
+var workspaceStoreProbe = func(ctx context.Context, ws *config.Workspace, project config.ProjectEntry) (bool, error) {
+	if ws.Store.Backend != "postgres" || ws.Store.Postgres.DSN == "" {
+		// No shared store to probe: local presence is the only signal, and a
+		// missing local path is a failure, not a servable state.
+		return false, fmt.Errorf("availability probe unsupported for backend %q", ws.Store.Backend)
+	}
+	symStore, err := trace.NewPostgresSymbolStore(ctx, ws.Store.Postgres.DSN, ws.Name, project.Name)
+	if err != nil {
+		return false, err
+	}
+	defer symStore.Close()
+	if err := symStore.Load(ctx); err != nil {
+		return false, err
+	}
+	probeStats, err := symStore.GetStats(ctx)
+	if err != nil {
+		return false, err
+	}
+	return probeStats.TotalSymbols > 0 || probeStats.TotalFiles > 0, nil
+}
+
+// classifyWorkspaceProjectAvailability maps (path exists, store probe result)
+// to the disclosed availability state: locally-available (checkout present on
+// this host, buildable), serving-only (no local checkout but shared store
+// data answers queries) or failed (neither local files nor shared data
+// reachable). The reason is empty except for failed.
+func classifyWorkspaceProjectAvailability(pathExists bool, probeFound bool, probeErr error) (string, string) {
+	if pathExists {
+		return "locally-available", ""
+	}
+	if probeErr != nil {
+		return "failed", probeErr.Error()
+	}
+	if probeFound {
+		return "serving-only", ""
+	}
+	return "failed", "project absent from shared store and missing locally"
+}
+
 func showWorkspaceStatus(ws *config.Workspace) error {
 	fmt.Printf("Workspace: %s\n", ws.Name)
 	fmt.Printf("  Backend: %s\n", ws.Store.Backend)
 	fmt.Printf("  Projects: %d\n", len(ws.Projects))
 
-	// Check if each project path exists
+	ctx := context.Background()
 	for _, p := range ws.Projects {
-		exists := "✓"
+		pathExists := true
 		if _, err := os.Stat(p.Path); os.IsNotExist(err) {
-			exists = "✗ (path not found)"
+			pathExists = false
 		}
-		fmt.Printf("    - %s: %s %s\n", p.Name, p.Path, exists)
+		probeFound, probeErr := workspaceStoreProbe(ctx, ws, p)
+		state, reason := classifyWorkspaceProjectAvailability(pathExists, probeFound, probeErr)
+		line := fmt.Sprintf("    - %s: %s %s", p.Name, p.Path, state)
+		switch state {
+		case "locally-available":
+			line += " ✓"
+		case "serving-only":
+			line += " ✓ (no local checkout; served from shared store)"
+		default:
+			line += " ✗ (" + reason + ")"
+		}
+		fmt.Println(line)
 	}
 
 	return nil
