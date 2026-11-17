@@ -2687,6 +2687,19 @@ func startBackgroundWorkspaceWatch(logDir string, ws *config.Workspace) error {
 	return fmt.Errorf("timeout waiting for process to become ready (check logs at %s)", wsLogFile)
 }
 
+// validateWorkspaceProjectPaths stats every selected project path. Any stat
+// error — not only IsNotExist — fails the path stage with project, path and
+// reason: a permission-denied or I/O error on a selected project would
+// otherwise surface later as an opaque runtime failure or silently degrade.
+func validateWorkspaceProjectPaths(ws *config.Workspace) error {
+	for _, p := range ws.Projects {
+		if _, err := os.Stat(p.Path); err != nil {
+			return fmt.Errorf("workspace %q project %q path stage failed for %s: %w", ws.Name, p.Name, p.Path, err)
+		}
+	}
+	return nil
+}
+
 func runWorkspaceWatchForeground(logDir string, ws *config.Workspace) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -2720,11 +2733,9 @@ func runWorkspaceWatchForeground(logDir string, ws *config.Workspace) error {
 		log.Printf("Projects: %d", len(ws.Projects))
 	}
 
-	// Check all project paths exist
-	for _, p := range ws.Projects {
-		if _, err := os.Stat(p.Path); os.IsNotExist(err) {
-			return fmt.Errorf("project path does not exist: %s (%s)", p.Name, p.Path)
-		}
+	// Check all selected project paths stat cleanly before anything else
+	if err := validateWorkspaceProjectPaths(ws); err != nil {
+		return err
 	}
 
 	// Initialize shared embedder
