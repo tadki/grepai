@@ -151,10 +151,10 @@ func (c *WorkspaceConfig) FindOwningWorkspace(projectPath string) (*Workspace, *
 	}
 	want = filepath.Clean(want)
 	var (
-		matchName   string
-		matchWs     *Workspace
-		matchProj   *ProjectEntry
-		candidates  []string
+		matchName  string
+		matchWs    *Workspace
+		matchProj  *ProjectEntry
+		candidates []string
 	)
 	for name := range c.Workspaces {
 		ws := c.Workspaces[name]
@@ -319,9 +319,9 @@ func FindWorkspaceForPath(targetPath string) (string, *Workspace, error) {
 	}
 
 	var (
-		matchName   string
-		matchWs     *Workspace
-		candidates  []string
+		matchName  string
+		matchWs    *Workspace
+		candidates []string
 	)
 	for name, ws := range cfg.Workspaces {
 		for _, proj := range ws.Projects {

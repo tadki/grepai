@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	mcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/yoanbernabeu/grepai/config"
 	"github.com/yoanbernabeu/grepai/rpg"
-	mcp "github.com/mark3labs/mcp-go/mcp"
 )
 
 // seedDisclosureProject mirrors the rpg-package test seed: a project with an

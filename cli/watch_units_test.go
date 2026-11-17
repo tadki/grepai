@@ -126,10 +126,14 @@ func TestWatchSupervisorOptions(t *testing.T) {
 		t.Fatal("observer options must be stored")
 	}
 	// Prove the stored closures are the ones passed in.
-	cfg.scanObserver(1, 2, "f"); _ = scanSeen
-	cfg.embedObserver(indexer.BatchProgressInfo{}); _ = embedSeen
-	cfg.rpgObserver("s", 1, 2); _ = rpgSeen
-	cfg.scopeObserver(3); _ = scopeSeen
+	cfg.scanObserver(1, 2, "f")
+	_ = scanSeen
+	cfg.embedObserver(indexer.BatchProgressInfo{})
+	_ = embedSeen
+	cfg.rpgObserver("s", 1, 2)
+	_ = rpgSeen
+	cfg.scopeObserver(3)
+	_ = scopeSeen
 	_ = eventSeen
 }
 
@@ -168,5 +172,3 @@ func TestInitializeStoreGobAndUnknown(t *testing.T) {
 		t.Fatalf("unknown backend err=%v", err)
 	}
 }
-
-

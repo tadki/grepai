@@ -27,10 +27,10 @@ type stubProbeStore struct {
 	stats      *trace.SymbolStats
 }
 
-func (s *stubProbeStore) Load(ctx context.Context) error                        { return nil }
-func (s *stubProbeStore) Persist(ctx context.Context) error                     { return s.persistErr }
-func (s *stubProbeStore) Close() error                                          { return s.closeErr }
-func (s *stubProbeStore) IsFileIndexed(filePath string) bool                    { return false }
+func (s *stubProbeStore) Load(ctx context.Context) error     { return nil }
+func (s *stubProbeStore) Persist(ctx context.Context) error  { return s.persistErr }
+func (s *stubProbeStore) Close() error                       { return s.closeErr }
+func (s *stubProbeStore) IsFileIndexed(filePath string) bool { return false }
 func (s *stubProbeStore) GetFileExtractorVersion(filePath string) (string, bool) {
 	return "", false
 }
@@ -86,8 +86,8 @@ func TestShowWorkspaceStatusDisclosesAvailability(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	ws := &config.Workspace{
-		Name:    "ws-status",
-		Store:   config.StoreConfig{Backend: "postgres", Postgres: config.PostgresConfig{DSN: "postgres://probe/test"}},
+		Name:  "ws-status",
+		Store: config.StoreConfig{Backend: "postgres", Postgres: config.PostgresConfig{DSN: "postgres://probe/test"}},
 		Projects: []config.ProjectEntry{
 			{Name: "local", Path: local},
 			{Name: "remote", Path: filepath.Join(base, "remote")},

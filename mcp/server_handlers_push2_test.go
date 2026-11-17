@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mark3labs/mcp-go/server"
 	"github.com/yoanbernabeu/grepai/config"
 	"github.com/yoanbernabeu/grepai/rpg"
 	"github.com/yoanbernabeu/grepai/stats"
 	"github.com/yoanbernabeu/grepai/trace"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // seedChainSymbols writes a store where a→b→c→d form a call chain so deep
