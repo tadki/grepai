@@ -154,6 +154,11 @@ grepai workspace status my-fullstack
 grepai workspace delete my-fullstack
 ```
 
+`workspace status` discloses per-project availability: `locally-available`
+(the checkout exists on this host), `serving-only` (no local checkout but
+the shared store answers queries for the project) or `failed` with an
+explicit reason (neither local files nor shared store data reachable).
+
 ### Project Management
 
 ```bash
@@ -241,7 +246,9 @@ Without the `--workspace` flag, agents can still search workspaces by passing pa
 
 The trace tools (`grepai_trace_callers`, `grepai_trace_callees`, `grepai_trace_graph`) and `grepai_index_status` fully support workspace mode. When the MCP server is started with `--workspace`, trace tools automatically search across all projects in the workspace. You can also pass a `project` parameter to limit the trace to a specific project.
 
-Each project in a workspace maintains its own symbol index in `.grepai/symbols.gob`, regardless of the vector store backend (Qdrant or PostgreSQL). Symbols are built automatically during `grepai watch --workspace`.
+For PostgreSQL-backed workspaces each project's symbol index and RPG graph live in the shared store (queryable by hosts without the project files); other backends keep per-project `.grepai/symbols.gob`. Symbols are built automatically during `grepai watch --workspace`.
+
+The RPG tools (`grepai_rpg_search`, `grepai_rpg_fetch`, `grepai_rpg_explore`) require an explicit `project` parameter on multi-project workspaces. When `project` is omitted, the server picks one project implicitly (first non-empty RPG index) and discloses that choice in the response's `scope` field — always pass `project` explicitly to target a specific project.
 
 ```json
 {
