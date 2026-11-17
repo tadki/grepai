@@ -85,20 +85,22 @@ func TestWorkspaceWatchSelectedInitialScanSymbolsFail(t *testing.T) {
 func TestWorkspaceStatusAvailability(t *testing.T) {
 	cases := []struct {
 		name       string
-		pathExists bool
+		statErr    error
 		probeFound bool
 		probeErr   error
 		wantState  string
 		wantReason bool
 	}{
-		{"local", true, false, nil, "locally-available", false},
-		{"local_ignores_probe_error", true, false, fmt.Errorf("db down"), "locally-available", false},
-		{"serving_only", false, true, nil, "serving-only", false},
-		{"failed_absent_everywhere", false, false, nil, "failed", true},
-		{"failed_probe_error", false, false, fmt.Errorf("db down"), "failed", true},
+		{"local", nil, false, nil, "locally-available", false},
+		{"local_ignores_probe_error", nil, false, fmt.Errorf("db down"), "locally-available", false},
+		{"serving_only", os.ErrNotExist, true, nil, "serving-only", false},
+		{"failed_absent_everywhere", os.ErrNotExist, false, nil, "failed", true},
+		{"failed_probe_error", os.ErrNotExist, false, fmt.Errorf("db down"), "failed", true},
+		{"failed_non_enoent_stat", fmt.Errorf("stat perm denied: EACCES"), true, nil, "failed", true},
+		{"failed_non_enoent_stat_beats_probe", fmt.Errorf("stat perm denied: EACCES"), false, nil, "failed", true},
 	}
 	for _, tc := range cases {
-		state, reason := classifyWorkspaceProjectAvailability(tc.pathExists, tc.probeFound, tc.probeErr)
+		state, reason := classifyWorkspaceProjectAvailability(tc.statErr, tc.probeFound, tc.probeErr)
 		if state != tc.wantState {
 			t.Fatalf("%s: state = %q, want %q", tc.name, state, tc.wantState)
 		}
@@ -109,7 +111,7 @@ func TestWorkspaceStatusAvailability(t *testing.T) {
 			t.Fatalf("%s: non-failed state must not carry a reason, got %q", tc.name, reason)
 		}
 	}
-	if _, reason := classifyWorkspaceProjectAvailability(false, false, fmt.Errorf("db down")); !strings.Contains(reason, "db down") {
+	if _, reason := classifyWorkspaceProjectAvailability(os.ErrNotExist, false, fmt.Errorf("db down")); !strings.Contains(reason, "db down") {
 		t.Fatalf("probe error must surface as the failure reason, got %q", reason)
 	}
 }

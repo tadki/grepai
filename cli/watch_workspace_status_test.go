@@ -363,8 +363,82 @@ func TestWorkspaceWatchStrictScanPrintsTotalsLine(t *testing.T) {
 // disclosure explicitly for the workspace-watch failure matrix: a project
 // with no local checkout but live shared-store data is servable, not failed.
 func TestWorkspaceWatchServingOnlyStatusClassification(t *testing.T) {
-	state, reason := classifyWorkspaceProjectAvailability(false, true, nil)
+	state, reason := classifyWorkspaceProjectAvailability(os.ErrNotExist, true, nil)
 	if state != "serving-only" || reason != "" {
 		t.Fatalf("state=%q reason=%q, want serving-only with empty reason", state, reason)
+	}
+}
+
+// TestShowWorkspaceStatusEACCESNotLocallyAvailable is the MEDIUM-1 regression
+// from Final Review R1: a path whose stat fails with a non-ENOENT error
+// (EACCES behind a non-searchable parent) must surface as failed through the
+// full status output chain — never as locally-available. The assertion runs
+// against the rendered stdout, not just the pure classifier.
+func TestShowWorkspaceStatusEACCESNotLocallyAvailable(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("permission-based counterexample is ineffective for root")
+	}
+	base := t.TempDir()
+	local := filepath.Join(base, "local")
+	if err := os.MkdirAll(local, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	lockedParent := filepath.Join(base, "locked")
+	if err := os.MkdirAll(lockedParent, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	unreadable := filepath.Join(lockedParent, "child")
+	if err := os.Chmod(lockedParent, 0o600); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lockedParent, 0o755) })
+
+	// Setup guard: stat on the child must fail with a non-ENOENT error.
+	if _, err := os.Stat(unreadable); err == nil || os.IsNotExist(err) {
+		t.Fatalf("setup: expected non-ENOENT stat error for %s, got err=%v", unreadable, err)
+	}
+
+	ws := &config.Workspace{
+		Name:  "eacc-ws",
+		Store: config.StoreConfig{Backend: "postgres", Postgres: config.PostgresConfig{DSN: "postgres://probe/eacc"}},
+		Projects: []config.ProjectEntry{
+			{Name: "local", Path: local},
+			{Name: "eaccess", Path: unreadable},
+		},
+	}
+	oldProbe := workspaceStoreProbe
+	t.Cleanup(func() { workspaceStoreProbe = oldProbe })
+	workspaceStoreProbe = func(ctx context.Context, ws *config.Workspace, project config.ProjectEntry) (bool, error) {
+		return false, fmt.Errorf("db down")
+	}
+
+	out := captureStdout(t, func() {
+		if err := showWorkspaceStatus(ws); err != nil {
+			t.Fatalf("showWorkspaceStatus: %v", err)
+		}
+	})
+
+	// The healthy project stays locally-available.
+	localLine := ""
+	eaccessLine := ""
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "    - local:") {
+			localLine = line
+		}
+		if strings.HasPrefix(line, "    - eaccess:") {
+			eaccessLine = line
+		}
+	}
+	if localLine == "" || !strings.Contains(localLine, "locally-available") {
+		t.Fatalf("local project line %q must stay locally-available", localLine)
+	}
+	if eaccessLine == "" {
+		t.Fatalf("eaccess project line missing from output %q", out)
+	}
+	if strings.Contains(eaccessLine, "locally-available") {
+		t.Fatalf("EACCES project must NOT be disclosed locally-available: %q", eaccessLine)
+	}
+	if !strings.Contains(eaccessLine, "failed") {
+		t.Fatalf("EACCES project line %q must be failed", eaccessLine)
 	}
 }

@@ -249,22 +249,27 @@ var workspaceStoreProbe = func(ctx context.Context, ws *config.Workspace, projec
 	return probeStats.TotalSymbols > 0 || probeStats.TotalFiles > 0, nil
 }
 
-// classifyWorkspaceProjectAvailability maps (path exists, store probe result)
-// to the disclosed availability state: locally-available (checkout present on
-// this host, buildable), serving-only (no local checkout but shared store
-// data answers queries) or failed (neither local files nor shared data
-// reachable). The reason is empty except for failed.
-func classifyWorkspaceProjectAvailability(pathExists bool, probeFound bool, probeErr error) (string, string) {
-	if pathExists {
+// classifyWorkspaceProjectAvailability maps (path stat result, store probe
+// result) to the disclosed availability state: locally-available (checkout
+// present on this host, buildable), serving-only (no local checkout but
+// shared store data answers queries) or failed. Any non-ENOENT stat error is
+// failed with the stat error as reason — the path cannot be verified local,
+// so claiming locally-available would be a false disclosure. The reason is
+// empty except for failed.
+func classifyWorkspaceProjectAvailability(statErr error, probeFound bool, probeErr error) (string, string) {
+	if statErr == nil {
 		return "locally-available", ""
 	}
-	if probeErr != nil {
-		return "failed", probeErr.Error()
+	if os.IsNotExist(statErr) {
+		if probeErr != nil {
+			return "failed", probeErr.Error()
+		}
+		if probeFound {
+			return "serving-only", ""
+		}
+		return "failed", "project absent from shared store and missing locally"
 	}
-	if probeFound {
-		return "serving-only", ""
-	}
-	return "failed", "project absent from shared store and missing locally"
+	return "failed", statErr.Error()
 }
 
 func showWorkspaceStatus(ws *config.Workspace) error {
@@ -274,12 +279,9 @@ func showWorkspaceStatus(ws *config.Workspace) error {
 
 	ctx := context.Background()
 	for _, p := range ws.Projects {
-		pathExists := true
-		if _, err := os.Stat(p.Path); os.IsNotExist(err) {
-			pathExists = false
-		}
+		_, statErr := os.Stat(p.Path)
 		probeFound, probeErr := workspaceStoreProbe(ctx, ws, p)
-		state, reason := classifyWorkspaceProjectAvailability(pathExists, probeFound, probeErr)
+		state, reason := classifyWorkspaceProjectAvailability(statErr, probeFound, probeErr)
 		line := fmt.Sprintf("    - %s: %s %s", p.Name, p.Path, state)
 		switch state {
 		case "locally-available":
