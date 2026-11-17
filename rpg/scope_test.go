@@ -233,7 +233,7 @@ func TestLoadWorkspaceRPG_gob_backend_should_pick_first_non_empty_project(t *tes
 		},
 	})
 
-	store, qe, err := LoadWorkspaceRPG(context.Background(), "ws-gob", "")
+	store, qe, _, err := LoadWorkspaceRPG(context.Background(), "ws-gob", "")
 	if err != nil {
 		t.Fatalf("LoadWorkspaceRPG: %v", err)
 	}
@@ -257,11 +257,11 @@ func TestLoadWorkspaceRPG_should_fail_clean_on_unknown_workspace_and_project(t *
 		Projects: []config.ProjectEntry{{Name: "real", Path: root}},
 	})
 
-	_, _, err := LoadWorkspaceRPG(context.Background(), "ghost", "")
+	_, _, _, err := LoadWorkspaceRPG(context.Background(), "ghost", "")
 	if err == nil || !strings.Contains(err.Error(), "ghost") {
 		t.Fatalf("unknown workspace error = %v", err)
 	}
-	_, _, err = LoadWorkspaceRPG(context.Background(), "ws", "phantom")
+	_, _, _, err = LoadWorkspaceRPG(context.Background(), "ws", "phantom")
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("unknown project error = %v", err)
 	}
@@ -279,7 +279,7 @@ func TestLoadWorkspaceRPG_should_return_empty_sentinel_when_all_projects_empty(t
 		Name:     "ws",
 		Projects: []config.ProjectEntry{{Name: "empty", Path: emptyRoot}},
 	})
-	if _, _, err := LoadWorkspaceRPG(context.Background(), "ws", ""); !errors.Is(err, ErrRPGIndexEmpty) {
+	if _, _, _, err := LoadWorkspaceRPG(context.Background(), "ws", ""); !errors.Is(err, ErrRPGIndexEmpty) {
 		t.Fatalf("want ErrRPGIndexEmpty, got %v", err)
 	}
 }
@@ -295,7 +295,7 @@ func TestLoadRPGForScope_auto_should_attribute_project_to_gob_workspace(t *testi
 	})
 	withTestWorkingDir(t, root)
 
-	store, _, err := LoadRPGForScope(context.Background(), "", "")
+	store, _, _, err := LoadRPGForScope(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("LoadRPGForScope: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestLoadRPGForScope_auto_should_degrade_to_local_gob_when_postgres_unreacha
 	withTestWorkingDir(t, root)
 
 	readLog := captureLog(t)
-	store, qe, err := LoadRPGForScope(context.Background(), "", "")
+	store, qe, _, err := LoadRPGForScope(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("unreachable postgres should degrade to local gob, got %v", err)
 	}
@@ -355,7 +355,7 @@ func TestLoadRPGForScope_explicit_postgres_unreachable_should_report_clean_error
 	})
 	withTestWorkingDir(t, root)
 
-	_, _, err := LoadRPGForScope(context.Background(), "ws-pg", "")
+	_, _, _, err := LoadRPGForScope(context.Background(), "ws-pg", "")
 	if err == nil {
 		t.Fatal("explicit --workspace with unreachable postgres must report an error, not degrade")
 	}
@@ -371,7 +371,7 @@ func TestLoadRPGForScope_no_workspace_no_project_config_should_error_clean(t *te
 	root := seedRPGProject(t, base, "plain", "eta")
 	withTestWorkingDir(t, root)
 
-	store, _, err := LoadRPGForScope(context.Background(), "", "")
+	store, _, _, err := LoadRPGForScope(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("plain single project should keep local gob behavior: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestLoadWorkspaceRPG_should_handle_mixed_project_row_states(t *testing.T) {
 		},
 	})
 
-	store, qe, err := LoadWorkspaceRPG(context.Background(), "ws-mixed", "")
+	store, qe, _, err := LoadWorkspaceRPG(context.Background(), "ws-mixed", "")
 	if err != nil {
 		t.Fatalf("LoadWorkspaceRPG: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestLoadWorkspaceRPG_should_return_config_error_on_invalid_workspace_yaml(t
 	if err := os.WriteFile(filepath.Join(home, ".grepai", "workspace.yaml"), []byte("] not yaml ["), 0o644); err != nil {
 		t.Fatalf("write workspace yaml: %v", err)
 	}
-	_, _, err := LoadWorkspaceRPG(context.Background(), "ws", "")
+	_, _, _, err := LoadWorkspaceRPG(context.Background(), "ws", "")
 	if err == nil || !strings.Contains(err.Error(), "workspace config") {
 		t.Fatalf("want clean config error, got %v", err)
 	}
@@ -444,7 +444,7 @@ func TestLoadWorkspaceRPG_should_return_config_error_on_invalid_workspace_yaml(t
 func TestLoadWorkspaceRPG_should_return_empty_sentinel_without_workspace_yaml(t *testing.T) {
 	home := t.TempDir()
 	scopeTestEnv(t, home)
-	if _, _, err := LoadWorkspaceRPG(context.Background(), "ws", ""); !errors.Is(err, ErrRPGIndexEmpty) {
+	if _, _, _, err := LoadWorkspaceRPG(context.Background(), "ws", ""); !errors.Is(err, ErrRPGIndexEmpty) {
 		t.Fatalf("want ErrRPGIndexEmpty, got %v", err)
 	}
 }
@@ -496,7 +496,7 @@ func TestLoadRPGForScope_auto_should_degrade_to_local_when_workspace_config_inva
 	if err := os.WriteFile(filepath.Join(home, ".grepai", "workspace.yaml"), []byte("] not yaml ["), 0o644); err != nil {
 		t.Fatalf("write workspace yaml: %v", err)
 	}
-	store, _, err := LoadRPGForScope(context.Background(), "", "")
+	store, _, _, err := LoadRPGForScope(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("invalid workspace config should degrade to local gob: %v", err)
 	}
@@ -521,7 +521,7 @@ func TestLoadRPGForScope_explicit_workspace_empty_should_not_degrade_to_local(t 
 	})
 	withTestWorkingDir(t, filepath.Join(base, "local-fresh"))
 
-	_, _, err := LoadRPGForScope(context.Background(), "ws-empty", "")
+	_, _, _, err := LoadRPGForScope(context.Background(), "ws-empty", "")
 	if !errors.Is(err, ErrRPGIndexEmpty) {
 		t.Fatalf("explicit workspace mode must not fall back to the local graph, got %v", err)
 	}
@@ -574,7 +574,7 @@ func TestLoadWorkspaceRPG_explicit_project_should_not_fall_through_to_siblings(t
 	})
 
 	readLog := captureLog(t)
-	_, _, err := LoadWorkspaceRPG(context.Background(), "ws-explicit", "empty")
+	_, _, _, err := LoadWorkspaceRPG(context.Background(), "ws-explicit", "empty")
 	if !errors.Is(err, ErrRPGIndexEmpty) {
 		t.Fatalf("explicit empty project must not be served a sibling's graph, got %v", err)
 	}
@@ -582,7 +582,7 @@ func TestLoadWorkspaceRPG_explicit_project_should_not_fall_through_to_siblings(t
 		t.Fatalf("explicit selection must not log an implicit project choice: %q", logs)
 	}
 
-	store, qe, err := LoadWorkspaceRPG(context.Background(), "ws-explicit", "data")
+	store, qe, _, err := LoadWorkspaceRPG(context.Background(), "ws-explicit", "data")
 	if err != nil {
 		t.Fatalf("explicit data project should load: %v", err)
 	}
@@ -613,7 +613,7 @@ func TestLoadWorkspaceRPG_multi_project_should_log_implicit_selection(t *testing
 	})
 
 	readLog := captureLog(t)
-	store, qe, err := LoadWorkspaceRPG(context.Background(), "ws-order", "")
+	store, qe, _, err := LoadWorkspaceRPG(context.Background(), "ws-order", "")
 	if err != nil {
 		t.Fatalf("LoadWorkspaceRPG: %v", err)
 	}
@@ -656,7 +656,7 @@ func TestLoadWorkspaceRPG_should_map_stale_projects_to_outdated_sentinel(t *test
 		}
 		writeWorkspaceConfig(t, config.Workspace{Name: "ws-stale", Projects: projects})
 
-		_, _, err := LoadWorkspaceRPG(context.Background(), "ws-stale", "")
+		_, _, _, err := LoadWorkspaceRPG(context.Background(), "ws-stale", "")
 		if !errors.Is(err, ErrRPGIndexOutdated) {
 			t.Fatalf("staleFirst=%v: want ErrRPGIndexOutdated, got %v", staleFirst, err)
 		}
@@ -688,7 +688,7 @@ func TestLoadWorkspaceRPG_should_warn_and_skip_unloadable_gob_project(t *testing
 	})
 
 	readLog := captureLog(t)
-	store, qe, err := LoadWorkspaceRPG(context.Background(), "ws-junk", "")
+	store, qe, _, err := LoadWorkspaceRPG(context.Background(), "ws-junk", "")
 	if err != nil {
 		t.Fatalf("junk first project must not block the loadable one: %v", err)
 	}
@@ -780,7 +780,7 @@ func TestLoadRPGForScope_auto_pg_workspace_empty_row_should_not_degrade_to_local
 	}
 	pin.Close()
 
-	store, _, err := LoadRPGForScope(context.Background(), "", "")
+	store, _, _, err := LoadRPGForScope(context.Background(), "", "")
 	if store != nil || !errors.Is(err, ErrRPGIndexEmpty) {
 		t.Fatalf("shared store answered empty; auto mode must not substitute the local graph, got store=%v err=%v", store, err)
 	}

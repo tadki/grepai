@@ -81,7 +81,7 @@ func TestLoadWorkspaceRPG_postgres_selection(t *testing.T) {
 	const ws = "ws_loadworkspace_test"
 
 	// Empty row: loader reports the empty sentinel, not a reachability error.
-	if store, _, err := LoadWorkspaceRPG(ctx, ws, "proj_empty"); !errors.Is(err, ErrRPGIndexEmpty) || store != nil {
+	if store, _, _, err := LoadWorkspaceRPG(ctx, ws, "proj_empty"); !errors.Is(err, ErrRPGIndexEmpty) || store != nil {
 		t.Fatalf("empty row: want ErrRPGIndexEmpty, got store=%v err=%v", store, err)
 	}
 
@@ -96,7 +96,7 @@ func TestLoadWorkspaceRPG_postgres_selection(t *testing.T) {
 	}
 	writer.Close()
 
-	store, qe, err := LoadWorkspaceRPG(ctx, ws, "proj_data")
+	store, qe, _, err := LoadWorkspaceRPG(ctx, ws, "proj_data")
 	if err != nil {
 		t.Fatalf("non-empty row: %v", err)
 	}
@@ -110,12 +110,12 @@ func TestLoadWorkspaceRPG_postgres_selection(t *testing.T) {
 	store.Close()
 
 	// Ghost project inside a postgres workspace fails clean.
-	if _, _, err := LoadWorkspaceRPG(ctx, ws, "ghost"); err == nil || !strings.Contains(err.Error(), "not found") {
+	if _, _, _, err := LoadWorkspaceRPG(ctx, ws, "ghost"); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("ghost project: want not-found error, got %v", err)
 	}
 
 	// Unknown workspace in a configured environment fails clean, not empty.
-	if _, _, badErr := LoadWorkspaceRPG(ctx, "ws_loadworkspace_test_ghost", ""); !strings.Contains(badErr.Error(), "not found") {
+	if _, _, _, badErr := LoadWorkspaceRPG(ctx, "ws_loadworkspace_test_ghost", ""); !strings.Contains(badErr.Error(), "not found") {
 		t.Fatalf("unknown workspace should fail clean, got %v", badErr)
 	}
 }
