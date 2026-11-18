@@ -42,6 +42,12 @@ func TestSecretDenyRuleMatrix(t *testing.T) {
 		".ssh/id_ed25519",
 		"deploy/service-account-prod.json",
 		"scripts/service_account.json",
+		// Uppercase directory variants must match identically (MEDIUM-1 R1-O9B):
+		".ENV/plain.txt",
+		".AWS/credentials",
+		".GPG/data.txt",
+		".ENV/kol-mcp.env",
+		".SSH/id_rsa",
 	}
 	for _, p := range denied {
 		if !isSecretDeniedPath(p) {
@@ -58,6 +64,10 @@ func TestSecretDenyRuleMatrix(t *testing.T) {
 		"environment.ts", // "environment" is not the .env family
 		"docs/env-guide.md",
 		"keynote.md", // "keynote" does not end in .key
+		// Uppercase names that do NOT match any deny rule stay safe —
+		// case-insensitivity must not over-reach.
+		"SRC/ReadMe.md",
+		"Vendor/main.go",
 	}
 	for _, p := range allowed {
 		if isSecretDeniedPath(p) {

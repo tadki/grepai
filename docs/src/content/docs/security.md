@@ -17,7 +17,7 @@ If a denied file was already indexed (e.g. by an older grepai version), the next
 
 ## Default deny patterns
 
-Any path component or file name matching below rules is denied (case-insensitive on the file name):
+Any path component or file name matching below rules is denied. Matching is **case-insensitive end to end** — file basenames and every ancestor directory segment (`.ENV/x`, `.AWS/y`, `.GPG/z` are denied just like their lowercase forms):
 
 ### Env family
 

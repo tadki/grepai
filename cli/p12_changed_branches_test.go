@@ -614,3 +614,57 @@ func TestHandleFileEventSecretEvict(t *testing.T) {
 		t.Fatalf("safe file must stay indexed, docs=%v", docs)
 	}
 }
+
+// TestHandleFileEventSecretEvictUppercaseDir is the O-9 B MEDIUM-1 regression:
+// a file inside an UPPERCASE secret directory (.ENV/) was previously let
+// through to the normal index chain (ancestor segment comparison was
+// case-sensitive). The event must evict, not index.
+func TestHandleFileEventSecretEvictUppercaseDir(t *testing.T) {
+	root := t.TempDir()
+	ctx, idx, scanner, extractor, symStore, encoder, vecStore, cfg := buildEventRuntime(t, root)
+	manager := newRPGRealtimeManager(16)
+	lastWrite := time.Time{}
+
+	envRel := filepath.Join(".ENV", "plain.txt")
+	full := filepath.Join(root, ".ENV", "plain.txt")
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := "FAKE_SECRET=placeholder-not-a-real-value\n"
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	// Pre-deny era simulation: the uppercase-dir file is already indexed.
+	hash, err := indexer.HashFile(full)
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	if err := vecStore.SaveChunks(ctx, []store.Chunk{{
+		FilePath: envRel, StartLine: 1, EndLine: 1, Content: content,
+		Vector: make([]float32, 8), Hash: hash,
+	}}); err != nil {
+		t.Fatalf("seed env chunks: %v", err)
+	}
+
+	// A write event on the uppercase-dir denied path must evict, not index.
+	handleFileEvent(ctx, idx, scanner, extractor, symStore, encoder, vecStore,
+		cfg.Trace.EnabledLanguages, root, cfg, &lastWrite, manager,
+		watcher.FileEvent{Type: watcher.EventModify, Path: envRel},
+		nil, nil)
+
+	docs, err := vecStore.ListDocuments(ctx)
+	if err != nil {
+		t.Fatalf("ListDocuments: %v", err)
+	}
+	for _, d := range docs {
+		if strings.EqualFold(d, envRel) {
+			t.Fatalf("denied %s still indexed after eviction event: %v", envRel, docs)
+		}
+	}
+
+	// Scanner-level assertion for the same path, matching the review repro.
+	if !scanner.IsSecretDenied(envRel) {
+		t.Fatal("scanner deny must flag .ENV/plain.txt")
+	}
+}
