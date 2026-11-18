@@ -39,7 +39,7 @@ func newAtomicWriteHarness(t *testing.T) *atomicWriteHarness {
 		t.Fatalf("failed to create source file: %v", err)
 	}
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}

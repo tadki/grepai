@@ -49,12 +49,14 @@ type IgnoreMatcher struct {
 	extraDirs          []string        // patterns from config
 	grepaiMatchers     []grepaiMatcher // .grepaiignore matchers
 	hasGrepaiNegations bool            // true if any .grepaiignore has ! patterns
+	securityAllow      map[string]bool // exact paths exempt from secret deny (default empty)
 }
 
-func NewIgnoreMatcher(projectRoot string, extraIgnore []string, externalGitignore string) (*IgnoreMatcher, error) {
+func NewIgnoreMatcher(projectRoot string, extraIgnore []string, externalGitignore string, securityAllow []string) (*IgnoreMatcher, error) {
 	m := &IgnoreMatcher{
-		projectRoot: projectRoot,
-		extraDirs:   extraIgnore,
+		projectRoot:   projectRoot,
+		extraDirs:     extraIgnore,
+		securityAllow: securityAllowSet(securityAllow),
 	}
 
 	// Load external gitignore file if specified
@@ -164,6 +166,12 @@ func (m *IgnoreMatcher) ShouldIgnore(path string) bool {
 		return false
 	}
 
+	// Security deny is a mandatory floor evaluated independently of the user
+	// ignore chain: no .grepaiignore/gitignore pattern or negation can lift it.
+	if m.IsSecretDenied(path) {
+		return true
+	}
+
 	normalizedPath := filepath.ToSlash(path)
 
 	// Phase 1: Check if .grepaiignore has an opinion
@@ -189,6 +197,11 @@ func (m *IgnoreMatcher) ShouldIgnore(path string) bool {
 // If .grepaiignore has negation patterns, we must descend into ignored directories
 // because individual files inside may be re-included.
 func (m *IgnoreMatcher) ShouldSkipDir(path string) bool {
+	// A security-denied directory is skipped outright: user ignore rules or
+	// negations cannot rescue it.
+	if m.IsSecretDenied(path) {
+		return true
+	}
 	if !m.ShouldIgnore(path) {
 		return false // Not ignored, don't skip
 	}
@@ -207,6 +220,21 @@ func (m *IgnoreMatcher) ShouldSkipDir(path string) bool {
 
 	// There are negation patterns: files inside might be re-included, don't skip
 	return false
+}
+
+// IsSecretDenied reports whether a project-relative path matches the default
+// security deny rules (env files, key material, credential stores) and is not
+// explicitly exempted by an exact security.allow entry. The decision is made
+// before and independently of all user ignore configuration.
+func (m *IgnoreMatcher) IsSecretDenied(relPath string) bool {
+	normalized := filepath.ToSlash(strings.TrimPrefix(filepath.ToSlash(relPath), "./"))
+	if normalized == "" || normalized == "." {
+		return false
+	}
+	if m.securityAllow[normalized] {
+		return false // exact allowlist exemption
+	}
+	return isSecretDeniedPath(normalized)
 }
 
 // evalGrepaiIgnore checks .grepaiignore matchers for the path.

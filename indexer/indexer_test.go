@@ -256,7 +256,7 @@ func TestIndexAllWithProgress_UnchangedFilesSkipped(t *testing.T) {
 
 	// Create indexer with lastIndexTime set to now to enable ModTime-based skipping
 	mockEmbedder := newMockEmbedder()
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestIndexAllWithProgress_ChangedFilesIndexed(t *testing.T) {
 
 	// Create indexer
 	mockEmbedder := newMockEmbedder()
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -379,7 +379,7 @@ func TestIndexAllWithProgress_NewFilesIndexed(t *testing.T) {
 
 	// Create indexer
 	mockEmbedder := newMockEmbedder()
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestIndexAllWithProgress_DeletedFilesRemoved(t *testing.T) {
 
 	// Create indexer
 	mockEmbedder := newMockEmbedder()
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -569,7 +569,7 @@ func TestProgressTracking_AccurateChunkProgress(t *testing.T) {
 
 	mockStore := newMockStore()
 	mockEmb := newMockBatchEmbedder()
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -627,7 +627,7 @@ func TestProgressTracking_MonotonicallyIncreasing(t *testing.T) {
 
 	mockStore := newMockStore()
 	mockEmb := newMockBatchEmbedder()
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -678,7 +678,7 @@ func TestProgressTracking_ConcurrentBatches(t *testing.T) {
 	mockEmb := newMockBatchEmbedder()
 	mockEmb.delay = 10 * time.Millisecond // Add delay to create concurrency opportunity
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -724,7 +724,7 @@ func TestProgressTracking_NoFilesToIndex(t *testing.T) {
 	// Create empty directory (no files)
 	mockStore := newMockStore()
 	mockEmb := newMockBatchEmbedder()
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -1099,7 +1099,7 @@ func TestIndexFile_ReChunkOnContextLengthError(t *testing.T) {
 	mockEmb.failOnce = true // Allow success after re-chunking
 
 	mockStore := newMockStore()
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}

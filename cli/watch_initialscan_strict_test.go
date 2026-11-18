@@ -55,7 +55,7 @@ func TestWorkspaceWatchSelectedInitialScanSymbolsFail(t *testing.T) {
 		t.Fatalf("write source: %v", err)
 	}
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("ignore matcher: %v", err)
 	}

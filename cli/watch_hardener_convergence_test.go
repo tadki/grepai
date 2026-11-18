@@ -100,7 +100,7 @@ func TestWorkspaceWatchStrictScanStageScanFileFail(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(src, 0o644) })
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("ignore matcher: %v", err)
 	}

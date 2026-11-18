@@ -36,7 +36,7 @@ func buildEventRuntime(t *testing.T, root string) (
 		t.Fatalf("write a.go: %v", err)
 	}
 
-	ignore, err := indexer.NewIgnoreMatcher(root, []string{}, "")
+	ignore, err := indexer.NewIgnoreMatcher(root, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("ignore: %v", err)
 	}
