@@ -64,8 +64,13 @@ func isSecretDeniedPath(relPath string) bool {
 	if relPath == "" || relPath == "." {
 		return false
 	}
-	clean := filepath.ToSlash(strings.TrimPrefix(relPath, "./"))
-	base := strings.ToLower(filepath.Base(clean))
+	// Matching is case-insensitive end to end: the whole path is lowercased
+	// once so basenames AND ancestor directory segments (.ENV/x, .AWS/y,
+	// .GPG/z) are compared with identical semantics. Only the deny evaluation
+	// is lowercased; allowlist matching in IsSecretDenied keeps the original
+	// case so exact-path allow entries stay case-sensitive and auditable.
+	clean := strings.ToLower(filepath.ToSlash(strings.TrimPrefix(relPath, "./")))
+	base := filepath.Base(clean)
 
 	for _, dir := range secretDenyDirNames {
 		if base == dir {
@@ -95,6 +100,7 @@ func isSecretDeniedPath(relPath string) bool {
 
 	// Whole-directory deny: any ancestor segment named like a credential
 	// directory (e.g. .env/kol-mcp.env, .aws/credentials) denies the file.
+	// Case-insensitive: clean is already lowercased above.
 	dir := filepath.ToSlash(filepath.Dir(clean))
 	for _, seg := range strings.Split(dir, "/") {
 		for _, d := range secretDenyDirNames {
