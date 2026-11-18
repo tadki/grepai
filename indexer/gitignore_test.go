@@ -29,7 +29,7 @@ secret.txt
 		t.Fatalf("failed to create .gitignore: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestIgnoreMatcher_ExtraPatterns(t *testing.T) {
 	// No .gitignore file, only extra patterns
 	extraPatterns := []string{".git", ".grepai", "node_modules", "__pycache__"}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, extraPatterns, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, extraPatterns, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestIgnoreMatcher_CombinedPatterns(t *testing.T) {
 	// Extra patterns from config
 	extraPatterns := []string{".git", "vendor"}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, extraPatterns, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, extraPatterns, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestIgnoreMatcher_NoGitignore(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// No .gitignore, no extra patterns
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestIgnoreMatcher_DirectoryPatternWithTrailingSlash(t *testing.T) {
 		t.Fatalf("failed to create .gitignore: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestScanner_RespectsGitignore(t *testing.T) {
 	}
 
 	// Create scanner
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -295,7 +295,7 @@ generated/
 		t.Fatalf("failed to create docs/.gitignore: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestScanner_RespectsNestedGitignore(t *testing.T) {
 	}
 
 	// Create scanner
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -458,7 +458,7 @@ build/
 		t.Fatalf("failed to create project .gitignore: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(projectDir, []string{}, externalGitignore)
+	matcher, err := NewIgnoreMatcher(projectDir, []string{}, externalGitignore, nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -511,7 +511,7 @@ func TestIgnoreMatcher_ExternalGitignore_NotFound(t *testing.T) {
 	nonExistentPath := filepath.Join(tmpDir, "non-existent-gitignore")
 
 	// Should not fail, just log a warning
-	matcher, err := NewIgnoreMatcher(projectDir, []string{}, nonExistentPath)
+	matcher, err := NewIgnoreMatcher(projectDir, []string{}, nonExistentPath, nil)
 	if err != nil {
 		t.Fatalf("NewIgnoreMatcher should not fail with non-existent external gitignore: %v", err)
 	}
@@ -546,7 +546,7 @@ func TestIgnoreMatcher_ExternalGitignore_WithTilde(t *testing.T) {
 		t.Fatalf("failed to create external gitignore: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(projectDir, []string{}, externalGitignore)
+	matcher, err := NewIgnoreMatcher(projectDir, []string{}, externalGitignore, nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -567,7 +567,7 @@ func TestGrepaiIgnore_BasicExclusion(t *testing.T) {
 		t.Fatalf("failed to create .grepaiignore: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -617,7 +617,7 @@ func TestGrepaiIgnore_Negation(t *testing.T) {
 		t.Fatalf("failed to create vendor dir: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -668,7 +668,7 @@ func TestGrepaiIgnore_SelectiveNegation(t *testing.T) {
 		t.Fatalf("failed to create vendor/other dir: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -707,7 +707,7 @@ func TestGrepaiIgnore_OverridesExtraPatterns(t *testing.T) {
 		t.Fatalf("failed to create .grepaiignore: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, extraPatterns, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, extraPatterns, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -736,7 +736,7 @@ func TestGrepaiIgnore_Nested(t *testing.T) {
 		t.Fatalf("failed to create services/.grepaiignore: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -772,7 +772,7 @@ func TestGrepaiIgnore_NotPresent(t *testing.T) {
 		t.Fatalf("failed to create .gitignore: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -820,7 +820,7 @@ func TestShouldSkipDir_WithNegation(t *testing.T) {
 		t.Fatalf("failed to create vendor dir: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -837,7 +837,7 @@ func TestShouldSkipDir_WithNegation(t *testing.T) {
 		t.Fatalf("failed to create .gitignore: %v", err)
 	}
 
-	matcher2, err := NewIgnoreMatcher(tmpDir2, []string{}, "")
+	matcher2, err := NewIgnoreMatcher(tmpDir2, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -882,7 +882,7 @@ func TestScanner_RespectsGrepaiIgnoreNegation(t *testing.T) {
 		t.Fatalf("failed to create vendor/pkg/lib.go: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -944,7 +944,7 @@ func TestGrepaiIgnore_DoesNotOverrideNestedGitignore(t *testing.T) {
 		t.Fatalf("failed to create src/generated dir: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -986,7 +986,7 @@ func TestGrepaiIgnore_OverridesSameLevelGitignore(t *testing.T) {
 		t.Fatalf("failed to create .grepaiignore: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -1034,7 +1034,7 @@ func TestGrepaiIgnore_NestedOverridesNestedGitignore(t *testing.T) {
 		t.Fatalf("failed to create src/generated dir: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -1069,7 +1069,7 @@ func TestShouldIgnore_RootDotPath(t *testing.T) {
 		t.Fatalf("failed to create .gitignore: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -1114,7 +1114,7 @@ func TestScanner_DotStarSlashGitignoreDoesNotBlockAll(t *testing.T) {
 		t.Fatalf("failed to create .hidden/secret.go: %v", err)
 	}
 
-	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	matcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}

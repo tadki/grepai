@@ -145,6 +145,13 @@ func (s *Scanner) WithCustomExtensions(exts []string) *Scanner {
 	return s
 }
 
+// IsSecretDenied reports whether the project-relative path is denied by the
+// default security rules (env/key/credential material) and not explicitly
+// allowlisted. Watch increments consult this before indexing a file.
+func (s *Scanner) IsSecretDenied(relPath string) bool {
+	return s.ignore.IsSecretDenied(relPath)
+}
+
 func (s *Scanner) isSupported(ext string) bool {
 	if SupportedExtensions[ext] {
 		return true
@@ -174,6 +181,14 @@ func (s *Scanner) ScanMetadata() ([]FileMeta, []string, error) {
 				return filepath.SkipDir
 			}
 			return nil // Descend into the directory
+		}
+
+		// Security deny first: secret/key material is never indexed, even when
+		// user ignore rules or negations would re-include it. Checking before
+		// the ignore chain keeps the explicit "(secret)" skip reason visible.
+		if s.ignore.IsSecretDenied(relPath) {
+			skipped = append(skipped, relPath+" (secret)")
+			return nil
 		}
 
 		// Skip ignored files
@@ -238,6 +253,14 @@ func (s *Scanner) Scan() ([]FileInfo, []string, error) {
 			return nil // Descend into the directory
 		}
 
+		// Security deny first: secret/key material is never indexed, even when
+		// user ignore rules or negations would re-include it. Checking before
+		// the ignore chain keeps the explicit "(secret)" skip reason visible.
+		if s.ignore.IsSecretDenied(relPath) {
+			skipped = append(skipped, relPath+" (secret)")
+			return nil
+		}
+
 		// Skip ignored files
 		if s.ignore.ShouldIgnore(relPath) {
 			return nil
@@ -296,6 +319,11 @@ func (s *Scanner) Scan() ([]FileInfo, []string, error) {
 
 func (s *Scanner) ScanFile(relPath string) (*FileInfo, error) {
 	absPath := filepath.Join(s.root, relPath)
+
+	// Security deny: never read or return secret material.
+	if s.ignore.IsSecretDenied(relPath) {
+		return nil, nil
+	}
 
 	// Skip minified files
 	if isMinifiedFile(relPath) {

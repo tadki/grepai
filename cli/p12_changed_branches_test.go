@@ -18,6 +18,7 @@ import (
 	"github.com/yoanbernabeu/grepai/rpg"
 	"github.com/yoanbernabeu/grepai/store"
 	"github.com/yoanbernabeu/grepai/trace"
+	"github.com/yoanbernabeu/grepai/watcher"
 )
 
 // ---- shared stubs ----
@@ -515,7 +516,7 @@ func TestInitialScanScanErrorAndLegacyStatsLine(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(locked, 0o644) })
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("ignore matcher: %v", err)
 	}
@@ -547,5 +548,69 @@ func TestInitialScanScanErrorAndLegacyStatsLine(t *testing.T) {
 	})
 	if !strings.Contains(out, "Symbol index built:") {
 		t.Fatalf("legacy output %q lacks the symbol line", out)
+	}
+}
+
+// ---- O-9 B: watch-increment secret eviction ----
+
+// TestHandleFileEventSecretEvict pins the watch-increment deny semantics: a
+// create/write event for a denied path never indexes it and evicts any
+// pre-deny-era index entry instead.
+func TestHandleFileEventSecretEvict(t *testing.T) {
+	root := t.TempDir()
+	ctx, idx, scanner, extractor, symStore, encoder, vecStore, cfg := buildEventRuntime(t, root)
+	manager := newRPGRealtimeManager(16)
+	lastWrite := time.Time{}
+
+	// Pre-deny era: the .env file is already in the index (seeded manually).
+	envRel := ".env"
+	envContent := "FAKE_SECRET=placeholder-not-a-real-value\n"
+	if err := os.WriteFile(filepath.Join(root, envRel), []byte(envContent), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	hash, err := indexer.HashFile(filepath.Join(root, envRel))
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	if err := vecStore.SaveChunks(ctx, []store.Chunk{{
+		FilePath: envRel, StartLine: 1, EndLine: 1, Content: envContent,
+		Vector: make([]float32, 8), Hash: hash,
+	}}); err != nil {
+		t.Fatalf("seed env chunks: %v", err)
+	}
+
+	// A write event on the denied path must evict, not index.
+	handleFileEvent(ctx, idx, scanner, extractor, symStore, encoder, vecStore,
+		cfg.Trace.EnabledLanguages, root, cfg, &lastWrite, manager,
+		watcher.FileEvent{Type: watcher.EventModify, Path: envRel},
+		nil, nil)
+
+	docs, err := vecStore.ListDocuments(ctx)
+	if err != nil {
+		t.Fatalf("ListDocuments: %v", err)
+	}
+	for _, d := range docs {
+		if d == envRel {
+			t.Fatalf("denied %s still indexed after eviction event: %v", envRel, docs)
+		}
+	}
+
+	// A safe file is still indexed through the same chain.
+	if err := os.WriteFile(filepath.Join(root, "safe.go"), []byte("package main\n\nfunc safeFn() {}\n"), 0o644); err != nil {
+		t.Fatalf("write safe: %v", err)
+	}
+	handleFileEvent(ctx, idx, scanner, extractor, symStore, encoder, vecStore,
+		cfg.Trace.EnabledLanguages, root, cfg, &lastWrite, manager,
+		watcher.FileEvent{Type: watcher.EventModify, Path: "safe.go"},
+		nil, nil)
+	docs, _ = vecStore.ListDocuments(ctx)
+	foundSafe := false
+	for _, d := range docs {
+		if strings.HasSuffix(d, "safe.go") {
+			foundSafe = true
+		}
+	}
+	if !foundSafe {
+		t.Fatalf("safe file must stay indexed, docs=%v", docs)
 	}
 }

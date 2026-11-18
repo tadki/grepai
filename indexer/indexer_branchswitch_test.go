@@ -29,7 +29,7 @@ func TestIndexAllWithProgress_BranchSwitchSkipsBulkWithoutLookupOrEmbedding(t *t
 	tmpDir := t.TempDir()
 	createGoFixtureFiles(t, tmpDir, 200)
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -77,7 +77,7 @@ func BenchmarkIndexAllWithProgress_BranchSwitchScenario(b *testing.B) {
 	tmpDir := b.TempDir()
 	createGoFixtureFiles(b, tmpDir, 800)
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		b.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -131,7 +131,7 @@ func BenchmarkIndexAllWithProgress_FullHashRescan(b *testing.B) {
 	tmpDir := b.TempDir()
 	createGoFixtureFiles(b, tmpDir, 800)
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		b.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestIndexAllWithProgress_BinaryFileSkippedAfterMetadataPass(t *testing.T) {
 		t.Fatalf("failed to create binary fixture: %v", err)
 	}
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestIndexAllWithProgress_UnreadableFileSkippedAfterMetadataPass(t *testing.
 		_ = os.Chmod(srcPath, 0o644)
 	}()
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}

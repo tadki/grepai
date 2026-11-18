@@ -149,7 +149,7 @@ func TestWorkspaceWatchSelectedStrictScanPersistFail(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(proj, "main.go"), []byte("package main\n\nfunc real() {}\n"), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("ignore matcher: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestWorkspaceWatchSelectedStrictScanStatsFail(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(proj, "main.go"), []byte("package main\n\nfunc real() {}\n"), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("ignore matcher: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestWorkspaceWatchStrictScanReportsTotals(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(proj, "main.go"), []byte("package main\n\nfunc real() {}\n"), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("ignore matcher: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestWorkspaceWatchStrictScanCapsFailureList(t *testing.T) {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("ignore matcher: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestWorkspaceWatchStrictScanPrintsTotalsLine(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(proj, "main.go"), []byte("package main\n\nfunc real() {}\n"), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(proj, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("ignore matcher: %v", err)
 	}

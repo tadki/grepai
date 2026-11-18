@@ -73,6 +73,14 @@ type Config struct {
 	Update            UpdateConfig    `yaml:"update"`
 	Ignore            []string        `yaml:"ignore"`
 	ExternalGitignore string          `yaml:"external_gitignore,omitempty"`
+	Security          SecurityConfig  `yaml:"security"`
+}
+
+// SecurityConfig holds the mandatory secret-deny layer's opt-in exemptions.
+// Allow entries are exact project-relative paths (no globs); the default is
+// empty, meaning every default deny pattern applies unconditionally.
+type SecurityConfig struct {
+	Allow []string `yaml:"allow"`
 }
 
 // UpdateConfig holds auto-update settings

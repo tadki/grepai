@@ -31,7 +31,7 @@ func TestScanner_ScanCXXFiles(t *testing.T) {
 		}
 	}
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestScanner_Scan(t *testing.T) {
 	}
 
 	// Create ignore matcher
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestScanner_ScanMetadata(t *testing.T) {
 		t.Fatalf("failed to create minified file: %v", err)
 	}
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestScanner_IgnoreBinaryFiles(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestScanner_IgnoreUnsupportedExtensions(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestScanner_ScanFile(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestScanner_SkipsMinifiedFiles(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestScanner_ScanFile_SkipsMinified(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -404,7 +404,7 @@ func TestScanner_CustomExtensions(t *testing.T) {
 		t.Fatalf("failed to create go file: %v", err)
 	}
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestScanner_WithCustomExtensions_Normalizes(t *testing.T) {
 		t.Fatalf("failed to create upper file: %v", err)
 	}
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -474,7 +474,7 @@ func TestScanner_WithCustomExtensions_RejectsInvalidEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +503,7 @@ func TestScanner_CustomExtensions_BinaryStillSkipped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "")
+	ignoreMatcher, err := NewIgnoreMatcher(tmpDir, []string{}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -62,7 +62,7 @@ func TestRunInitialScan_SkipsSymbolExtractionWhenContentHashMatches(t *testing.T
 		t.Fatalf("failed to create source file: %v", err)
 	}
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestRunInitialScan_SkipsIndexedFileByLastIndexTime(t *testing.T) {
 		t.Fatalf("failed to create source file: %v", err)
 	}
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestHandleFileEvent_SkipsUnchangedFile(t *testing.T) {
 		t.Fatalf("failed to create source file: %v", err)
 	}
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -315,7 +315,7 @@ func TestHandleWorkspaceFileEvent_SkipsUnchangedFile(t *testing.T) {
 		t.Fatalf("failed to create source file: %v", err)
 	}
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectPath, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectPath, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -379,7 +379,7 @@ func TestHandleFileEvent_IndexesChangedFileAndUpdatesSymbols(t *testing.T) {
 		t.Fatalf("failed to create source file: %v", err)
 	}
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -449,7 +449,7 @@ func TestHandleFileEvent_DeleteRemovesIndexAndSymbols(t *testing.T) {
 	ctx := context.Background()
 	projectRoot := t.TempDir()
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -592,7 +592,7 @@ func TestRunInitialScan_ReExtractsWhenExtractorVersionDiffers(t *testing.T) {
 		t.Fatalf("failed to create source file: %v", err)
 	}
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -661,7 +661,7 @@ func TestRunInitialScan_ReExtractsWhenExtractorVersionIsMissing(t *testing.T) {
 		t.Fatalf("failed to create source file: %v", err)
 	}
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}
@@ -728,7 +728,7 @@ func TestRunInitialScan_ReExtractsWhenMtimeFastPathHitsStaleVersion(t *testing.T
 		t.Fatalf("failed to backdate source mtime: %v", err)
 	}
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "")
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, []string{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to create ignore matcher: %v", err)
 	}

@@ -1141,7 +1141,7 @@ func watchProjectWithEventObserver(ctx context.Context, projectRoot string, emb 
 	defer st.Close()
 
 	// Initialize ignore matcher
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, cfg.Ignore, cfg.ExternalGitignore)
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(projectRoot, cfg.Ignore, cfg.ExternalGitignore, cfg.Security.Allow)
 	if err != nil {
 		return fmt.Errorf("failed to initialize ignore matcher: %w", err)
 	}
@@ -2208,6 +2208,24 @@ func extractSymbolsWithFramework(ctx context.Context, extractor trace.SymbolExtr
 }
 
 func handleFileEvent(ctx context.Context, idx *indexer.Indexer, scanner *indexer.Scanner, extractor *trace.RegexExtractor, symbolStore projectSymbolStore, rpgEncoder *rpg.RPGEncoder, vectorStore store.VectorStore, enabledLanguages []string, projectRoot string, cfg *config.Config, lastConfigWrite *time.Time, rpgManager *rpgRealtimeManager, event watcher.FileEvent, onActivity watchActivityObserver, onStats watchStatsObserver, processors ...*framework.ProcessorRegistry) {
+	// Security deny: a denied path is never indexed. If it somehow already is
+	// in the index (pre-deny era), the event evicts it instead.
+	if scanner.IsSecretDenied(event.Path) {
+		if err := idx.RemoveFile(ctx, event.Path); err != nil {
+			log.Printf("Failed to evict denied file %s: %v", event.Path, err)
+		}
+		if err := symbolStore.DeleteFile(ctx, event.Path); err != nil {
+			log.Printf("Warning: failed to remove symbols for denied file %s: %v", event.Path, err)
+		}
+		if onActivity != nil {
+			onActivity("denied", event.Path)
+			defer onActivity("steady", "")
+		}
+		if onStats != nil {
+			onStats(projectRoot, watchStatsDelta{FilesRemoved: 1, SymbolsLost: 1})
+		}
+		return
+	}
 	// An atomic write -- write to a temp file, then rename it over the target
 	// -- surfaces on the destination path as RENAME/REMOVE with no follow-up
 	// CREATE or WRITE. Editors and coding agents (Claude Code, Cursor) save
@@ -2970,7 +2988,7 @@ func initializeWorkspaceRuntime(ctx context.Context, ws *config.Workspace, proje
 		projectCfg = loadedCfg
 	}
 
-	ignoreMatcher, err := indexer.NewIgnoreMatcher(project.Path, projectCfg.Ignore, projectCfg.ExternalGitignore)
+	ignoreMatcher, err := indexer.NewIgnoreMatcher(project.Path, projectCfg.Ignore, projectCfg.ExternalGitignore, projectCfg.Security.Allow)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize ignore matcher: %w", err)
 	}
