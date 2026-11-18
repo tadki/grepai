@@ -50,9 +50,9 @@ In workspace mode the watch daemon keeps each project's RPG graph in the shared 
 - Without flags, the current directory decides: if the project belongs to a postgres-backed workspace, the shared store is read (falling back to the local index with a warning when postgres is unreachable); otherwise the project's local gob index is used as before.
 
 ```bash
-grepai rpg search "scenario runner" --workspace gqt --project godot-qa-toolkit
-grepai rpg fetch "sym:cli/search.go:runSearch" --workspace gqt
-grepai rpg explore "sym:cli/search.go:runSearch" --workspace gqt --direction forward
+grepai rpg search "scenario runner" --workspace Seed --project godot-qa-toolkit
+grepai rpg fetch "sym:src/godot_qa_toolkit/gherkin/parser.py:Scenario" --workspace Seed
+grepai rpg explore "sym:src/godot_qa_toolkit/gherkin/parser.py:Scenario" --workspace Seed --direction forward
 ```
 
 On a multi-project workspace queried without `--project`, the first project with a non-empty RPG index is served and the choice is logged. Read-only queries never write: they neither create nor refresh any `.grepai/*.gob` files.
