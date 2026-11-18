@@ -51,8 +51,8 @@ In workspace mode the watch daemon keeps each project's RPG graph in the shared 
 
 ```bash
 grepai rpg search "scenario runner" --workspace Seed --project godot-qa-toolkit
-grepai rpg fetch "sym:src/godot_qa_toolkit/gherkin/parser.py:Scenario" --workspace Seed
-grepai rpg explore "sym:src/godot_qa_toolkit/gherkin/parser.py:Scenario" --workspace Seed --direction forward
+grepai rpg fetch "sym:src/godot_qa_toolkit/gherkin/parser.py:Scenario" --workspace Seed --project godot-qa-toolkit
+grepai rpg explore "sym:src/godot_qa_toolkit/gherkin/parser.py:Scenario" --workspace Seed --project godot-qa-toolkit --direction forward
 ```
 
 On a multi-project workspace queried without `--project`, the first project with a non-empty RPG index is served and the choice is logged. Read-only queries never write: they neither create nor refresh any `.grepai/*.gob` files.
